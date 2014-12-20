@@ -1,4 +1,4 @@
-project(Class.jl)
+project(Class.jl NONE)
 
 ## Setup
 cmake_minimum_required(VERSION 2.8)
