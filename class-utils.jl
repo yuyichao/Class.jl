@@ -12,7 +12,7 @@
 # License along with this library.
 
 macro is_toplevel()
-    tmp_var = gensym()
+    tmp_var = gensym("toplevel_test")
     quote
         $(esc(tmp_var)) = true
         try
@@ -90,11 +90,11 @@ macro chain(ex::Expr)
 
     args = ex.args[start_idx:end]
 
-    tmp_types = gensym()
-    tmp_types_l = gensym()
-    tmp_args = gensym()
-    tmp_kwargs = gensym()
-    tmp_meth = gensym()
+    tmp_types = gensym("orig_arg_types")
+    tmp_types_l = gensym("requested_types")
+    tmp_args = gensym("positional_arguments")
+    tmp_kwargs = gensym("keyword_arguments (not supported yet)")
+    tmp_meth = gensym("method_found")
 
     patch_types = quote
     end

@@ -34,7 +34,7 @@ macro class(head::Union(Symbol, Expr), body::Expr)
         name = head.args[1]::Symbol
         base_class = current_module().eval(head.args[3])
     end
-    type_name = gensym("$name")
+    type_name = gensym("class#$name")
     if body.head != :block
         error("Class body is not a block")
     end
@@ -43,9 +43,6 @@ macro class(head::Union(Symbol, Expr), body::Expr)
 
     esc_name = esc(name)
     esc_type_name = esc(type_name)
-
-    def_tmp = gensym()
-    names_tmp = gensym()
 
     return quote
         if !@is_toplevel
@@ -141,11 +138,11 @@ function gen_class_ast(type_name, this_class, base_class, body)
         end
     end
 
-    tmp_self = gensym()
+    tmp_self = gensym("class#self")
 
     function gen_mem_func_def(fname)
-        tmp_func_name = gensym()
         meth_name = get_func_fullname(fname)
+        tmp_func_name = gensym("method#$fname")
         # Hack because anonymous function does not allow keyword argument yet
         quote
             function $tmp_func_name(_args...; _kwargs...)
