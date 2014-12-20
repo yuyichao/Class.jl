@@ -66,8 +66,10 @@ end
     end
 end
 
+del_counter = 0
 @class DelClass <: DerivedClass begin
     function __class_del__(self)
+        global del_counter += 1
     end
 end
 
@@ -102,4 +104,6 @@ println(d::object)
 @assert d.get_c() == 1
 @assert d.get_d() == 2
 
-DelClass()
+@assert del_counter == 0
+finalize(DelClass())
+@assert del_counter == 1
