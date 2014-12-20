@@ -159,9 +159,10 @@ function gen_class_ast(type_name, this_class, base_class, body)
             $(Expr(:block,
                    [gen_mem_func_def(meth_name)
                     for (meth_name, func_module) in func_names]...))
-              Class.__class_init__($tmp_self, args...; kwargs...)
-              return $tmp_self
-          end))
+            Main.Class.__class_init__($tmp_self, args...; kwargs...)
+            finalizer($tmp_self, Main.Class._class_finalize)
+            return $tmp_self
+            end))
 
     func_defs = Expr(:block, funcs...)
     type_def = Expr(:type, true, Expr(:<:, type_name, this_class), new_body)

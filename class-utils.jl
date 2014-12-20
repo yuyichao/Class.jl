@@ -47,7 +47,20 @@ end
 function __class_init__(::object)
 end
 
-_reg_type(object, [(:__class_init__, current_module())], object)
+function __class_del__(::object)
+end
+
+_reg_type(object, [(:__class_init__, current_module()),
+                   (:__class_del__, current_module())], object)
+
+function _class_finalize(self::object)
+    t = (typeof(self),)
+    for del_meth = methods(__class_del__, (object,))
+        if t <: del_meth.sig
+            del_meth.func(self)
+        end
+    end
+end
 
 function chain_args_and_types(args...; kwargs...)
     return Base.typesof(args...), args, kwargs

@@ -66,6 +66,11 @@ end
     end
 end
 
+@class DelClass <: DerivedClass begin
+    function __class_del__(self)
+    end
+end
+
 @time d1 = DerivedClass()
 @time d2 = DerivedClass(1, float32(2))
 @time d3 = DerivedClass(1, 2, 3)
@@ -96,3 +101,5 @@ println(d::object)
 @assert d.get_b() == 4
 @assert d.get_c() == 1
 @assert d.get_d() == 2
+
+DelClass()
