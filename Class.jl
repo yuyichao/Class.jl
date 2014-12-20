@@ -23,19 +23,23 @@ macro class(head::Union(Symbol, Expr), body::Expr)
     # TODO? support parametrized type
     if isa(head, Symbol)
         name = head
-        esc_base_class = :(object)
+        esc_base_name = :(object)
+        base_class = object
     else
         if (head.head != :comparison || length(head.args) != 3 ||
             head.args[2] != :<:)
             error("Invalid class declaration: $head.")
         end
-        esc_base_class = esc(head.args[3])
+        esc_base_name = esc(head.args[3])
         name = head.args[1]::Symbol
+        base_class = current_module().eval(head.args[3])
     end
     type_name = gensym("$name")
     if body.head != :block
         error("Class body is not a block")
     end
+
+    class_ast, func_names = gen_class_ast(type_name, name, base_class, body)
 
     esc_name = esc(name)
     esc_type_name = esc(type_name)
@@ -48,20 +52,15 @@ macro class(head::Union(Symbol, Expr), body::Expr)
             error("Class can only be defined at module top level.")
         end
 
-        $esc_base_class::Type
-        if ! ($esc_base_class <: object && $esc_base_class.abstract)
-            error(string("Base class ", $esc_base_class,
+        $esc_base_name::Type
+        if ! ($esc_base_name <: object && $esc_base_name.abstract)
+            error(string("Base class ", $esc_base_name,
                          " is not a sub class of object"))
         end
-        abstract $esc_name <: $esc_base_class
+        abstract $esc_name <: $esc_base_name
 
-        $def_tmp, $names_tmp = gen_class_ast($(QuoteNode(type_name)),
-                                             $(QuoteNode(name)),
-                                             $esc_base_class,
-                                             $(QuoteNode(body)))
-        $(esc(:eval))($def_tmp)
-
-        _reg_type($esc_name, $names_tmp, $esc_type_name)
+        $(esc(class_ast))
+        _reg_type($esc_name, $func_names, $esc_type_name)
 
         function Base.convert(T::Type{$esc_name}, v)
             return convert($esc_type_name, v)
@@ -122,7 +121,6 @@ function gen_class_ast(type_name, this_class, base_class, body)
     end
 
     for f in funcs
-        # TODO use full signature of the function (including module)
         sig = f.args[1].args
 
         func_module = get_func_module(sig[1])
@@ -130,10 +128,14 @@ function gen_class_ast(type_name, this_class, base_class, body)
             sig[1] = get_func_fullname(func_module, sig[1])
         end
 
-        if isa(sig[2], Symbol)
+        if length(sig) < 2
+            error("Too few arguments for member function")
+        elseif isa(sig[2], Symbol)
             sig[2] = :($(sig[2])::$this_class)
         elseif isa(sig[2], Expr) && sig[2].head == :parameters
-            if isa(sig[3], Symbol)
+            if length(sig) < 3
+                error("Too few arguments for member function")
+            elseif isa(sig[3], Symbol)
                 sig[3] = :($(sig[3])::$this_class)
             end
         end
