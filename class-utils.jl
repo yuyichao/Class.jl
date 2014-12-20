@@ -79,6 +79,8 @@ function chain_convert_type(t::Type)
 end
 
 macro chain(ex::Expr)
+    # TODO, arguments with default value is not supported yet
+    # just too lazy to do it
     if ex.head != :call
         error("Expect function call")
     end
