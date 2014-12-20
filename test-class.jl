@@ -83,8 +83,8 @@ end
 b = BaseClass(1, float32(2))
 d = DerivedClass(1, 2, 3, float32(4))
 
-println(b)
-println(d)
+println(b::object)
+println(d::object)
 
 @assert b.method() == BaseClass
 @assert d.method() == (BaseClass, DerivedClass)
