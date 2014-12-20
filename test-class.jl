@@ -30,6 +30,15 @@ using Class
         self.a = 0
         self.b = 0
     end
+    function method(self)
+        return BaseClass
+    end
+    function get_a(self)
+        return self.a
+    end
+    function get_b(self)
+        return self.b
+    end
 end
 
 @class DerivedClass <: BaseClass begin
@@ -46,6 +55,15 @@ end
         self.d = d
         @chain __class_init__(self::BaseClass, args...)
     end
+    function method(self)
+        return (@chain method(self::BaseClass)), DerivedClass
+    end
+    function get_c(self)
+        return self.c
+    end
+    function get_d(self)
+        return self.d
+    end
 end
 
 @time d1 = DerivedClass()
@@ -61,3 +79,20 @@ println(d4)
 @time for i in 1:10000
     DerivedClass()
 end
+
+b = BaseClass(1, float32(2))
+d = DerivedClass(1, 2, 3, float32(4))
+
+println(b)
+println(d)
+
+@assert b.method() == BaseClass
+@assert d.method() == (BaseClass, DerivedClass)
+
+@assert b.get_a() == 1
+@assert b.get_b() == 2
+
+@assert d.get_a() == 3
+@assert d.get_b() == 4
+@assert d.get_c() == 1
+@assert d.get_d() == 2
