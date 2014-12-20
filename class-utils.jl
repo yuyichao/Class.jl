@@ -119,7 +119,6 @@ macro chain(ex::Expr)
             end
             $tmp_types_l = Type[$tmp_types...]
             $patch_types
-            # TODO more robust for abstract base types
             $tmp_meth = chain_get_method($(esc(ex.args[1])), $tmp_types,
                                          tuple($tmp_types_l...))
             $tmp_meth.func($tmp_args...)
