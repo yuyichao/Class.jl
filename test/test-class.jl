@@ -46,15 +46,15 @@ end
         self.__class_init__(0, 0)
     end
     function __class_init__(self, c::Int64, d::Float32)
-        @chain __class_init__(self, c::Any, d::Any)
+        @method_chain __class_init__(self, c::Any, d::Any)
     end
     function __class_init__(self, c, d, args...)
         self.c = c
         self.d = d
-        @chain __class_init__(self::BaseClass, args...)
+        @method_chain __class_init__(self::BaseClass, args...)
     end
     function method(self)
-        return (@chain method(self::BaseClass)), DerivedClass
+        return (@method_chain method(self::BaseClass)), DerivedClass
     end
     function get_c(self)
         return self.c

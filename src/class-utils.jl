@@ -11,6 +11,16 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this library.
 
+const _method_prefix = gensym("class_method")
+
+function _class_method(ex::Symbol)
+    Symbol("$_method_prefix:#$ex")
+end
+
+macro class_method(ex::Symbol)
+    esc(_class_method(ex))
+end
+
 macro is_toplevel()
     tmp_var = gensym("toplevel_test")
     quote
@@ -44,10 +54,10 @@ function _reg_type(t::Type, meths::Array{(Symbol, Module), 1}, real_type)
     end
 end
 
-function __class_init__(::object)
+function @class_method(__class_init__)(::object)
 end
 
-function __class_del__(::object)
+function @class_method(__class_del__)(::object)
 end
 
 _reg_type(object, [(:__class_init__, current_module()),
@@ -55,7 +65,7 @@ _reg_type(object, [(:__class_init__, current_module()),
 
 function _class_finalize(self::object)
     t = (typeof(self),)
-    for del_meth = methods(__class_del__, (object,))
+    for del_meth = methods(@class_method(__class_del__), (object,))
         if t <: del_meth.sig
             del_meth.func(self)
         end
@@ -78,7 +88,15 @@ function chain_convert_type(t::Type)
     end
 end
 
-macro chain(ex::Expr)
+function _method_chain_gen(ex::Expr)
+    if ex.head != :call
+        error("Expect function call")
+    end
+    ex.args[1] = _class_method(ex.args[1])
+    return _chain_gen(ex)
+end
+
+function _chain_gen(ex::Expr)
     # TODO, arguments with default value is not supported yet
     # just too lazy to do it
     if ex.head != :call
@@ -124,6 +142,14 @@ macro chain(ex::Expr)
             $tmp_meth.func($tmp_args...)
         end
     end
+end
+
+macro chain(ex::Expr)
+    return _chain_gen(ex)
+end
+
+macro method_chain(ex::Expr)
+    return _method_chain_gen(ex)
 end
 
 function chain_get_method(f, orig_types, new_types)

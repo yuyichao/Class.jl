@@ -15,9 +15,11 @@ module Class
 
 using Base
 
+export @class, object, @chain, @method_chain, @is_toplevel, @class_method
+
 include("class-utils.jl")
 
-export @class, object, @chain, @is_toplevel, __class_init__
+eval(Expr(:export, _class_method(:__class_init__)))
 
 macro class(head::Union(Symbol, Expr), body::Expr)
     # TODO? support parametrized type
@@ -107,14 +109,10 @@ function gen_class_ast(type_name, this_class, base_class, body)
 
     function get_func_fullname(func_module, fname)
         meth_name = :Main
-        for field in [fullname(func_module)..., fname]
+        for field in [fullname(func_module)..., _class_method(fname)]
             meth_name = :($meth_name.$field)
         end
         return meth_name
-    end
-
-    function get_func_fullname(fname)
-        return get_func_fullname(get_func_module(fname), fname)
     end
 
     for f in funcs
@@ -123,6 +121,8 @@ function gen_class_ast(type_name, this_class, base_class, body)
         func_module = get_func_module(sig[1])
         if func_module != current_module()
             sig[1] = get_func_fullname(func_module, sig[1])
+        else
+            sig[1] = _class_method(sig[1])
         end
 
         if length(sig) < 2
@@ -140,8 +140,8 @@ function gen_class_ast(type_name, this_class, base_class, body)
 
     tmp_self = gensym("class#self")
 
-    function gen_mem_func_def(fname)
-        meth_name = get_func_fullname(fname)
+    function gen_mem_func_def(fname, func_module)
+        meth_name = get_func_fullname(func_module, fname)
         tmp_func_name = gensym("method#$fname")
         # Hack because anonymous function does not allow keyword argument yet
         quote
@@ -156,9 +156,10 @@ function gen_class_ast(type_name, this_class, base_class, body)
           :(function $type_name(args...; kwargs...)
             $tmp_self = new()
             $(Expr(:block,
-                   [gen_mem_func_def(meth_name)
+                   [gen_mem_func_def(meth_name, func_module)
                     for (meth_name, func_module) in func_names]...))
-            Main.Class.__class_init__($tmp_self, args...; kwargs...)
+            Main.Class.@class_method(__class_init__)($tmp_self, args...;
+                                                     kwargs...)
             finalizer($tmp_self, Main.Class._class_finalize)
             return $tmp_self
             end))
