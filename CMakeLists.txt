@@ -6,6 +6,7 @@ set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(JuliaMacros)
+include(CMakePathMacros)
 
 julia_site_path(julia_path)
 
