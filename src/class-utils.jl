@@ -99,6 +99,7 @@ end
 function _chain_gen(ex::Expr)
     # TODO, arguments with default value is not supported yet
     # just too lazy to do it
+    # TODO handle non-generic functions
     if ex.head != :call
         error("Expect function call")
     end
@@ -114,7 +115,8 @@ function _chain_gen(ex::Expr)
     tmp_types_l = gensym("requested_types")
     tmp_args = gensym("positional_arguments")
     tmp_kwargs = gensym("keyword_arguments (not supported yet)")
-    tmp_meth = gensym("method_found")
+    tmp_func = gensym("func")
+    etmp_func = esc(tmp_func)
 
     patch_types = quote
     end
@@ -128,20 +130,53 @@ function _chain_gen(ex::Expr)
         end
     end
 
+    call_non_generic = copy(ex)
+    call_non_generic.args[1] = tmp_func
+
     quote
         let
-            ($tmp_types, $tmp_args, $tmp_kwargs) = $(esc(call_helper))
-            if !isempty($tmp_kwargs)
-                # Due to anonymous function
-                error("Keyword argument is not supported yet.")
+            $etmp_func = $(esc(ex.args[1]))
+            if !isgeneric($etmp_func)
+                $(esc(call_non_generic))
+            else
+                ($tmp_types, $tmp_args, $tmp_kwargs) = $(esc(call_helper))
+                $tmp_types_l = Type[$tmp_types...]
+                $patch_types
+                chain_call_with_types($etmp_func, $tmp_types,
+                                      tuple($tmp_types_l...),
+                                      $tmp_args, $tmp_kwargs)
             end
-            $tmp_types_l = Type[$tmp_types...]
-            $patch_types
-            $tmp_meth = chain_get_method($(esc(ex.args[1])), $tmp_types,
-                                         tuple($tmp_types_l...))
-            $tmp_meth.func($tmp_args...)
         end
     end
+end
+
+function chain_call_with_types(f, orig_types, new_types, args, kwargs)
+    if isempty(kwargs)
+        meth = chain_get_method(f, orig_types, new_types)
+        return meth.func(args...)
+    end
+
+    # The following code is translated from c code in jl_f_kwcall (builtins.c)
+    # This is necessary to manually handle the keyword arguments before
+    # non-generic function support keyword arguments.
+    if !isdefined(f.env, :kwsorter)
+        error("function $(f.env.name) does not accept keyword arguments")
+    end
+    sorter = f.env.kwsorter
+    meth = chain_get_method(sorter, tuple(Array, orig_types...),
+                            tuple(Array, new_types...))
+    func = meth.func
+
+    kwlen = length(kwargs)
+    ary = Array(Any, 2 * kwlen)
+
+    for i in 1:kwlen
+        ary[2 * i - 1] = kwargs[i][1]
+        ary[2 * i] = kwargs[i][2]
+    end
+
+    return ccall(func.fptr, Any, (Any, Ptr{Void}, UInt32),
+                 func, Any[ary, args...], length(args) + 1)
 end
 
 macro chain(ex::Expr)
@@ -159,6 +194,7 @@ function chain_get_method(f, orig_types, new_types)
             return meths[idx]
         end
     end
+    # TODO use no_method_error
     error("Cannot find method")
 end
 
