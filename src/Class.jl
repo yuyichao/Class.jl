@@ -15,7 +15,7 @@ module Class
 
 using Base
 
-export @class, object, @chain, @method_chain, @is_toplevel, @class_method
+export @class, object, @chain, @method_chain, @is_toplevel
 
 include("class-utils.jl")
 
