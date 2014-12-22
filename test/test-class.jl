@@ -14,25 +14,25 @@
 using Class
 
 @class BaseClass begin
-    __a::Int
+    __c::Int
     b::Float32
     function __class_init__(self, a::Int, b::Float32)
-        self.__a = a
+        self.__c = a
         self.b = b
     end
     function __class_init__(self, a::Int)
-        self.__a = a
+        self.__c = a
         self.b = a
     end
     function __class_init__(self)
-        self.__a = 0
+        self.__c = 0
         self.b = 0
     end
     function method(self)
         return BaseClass
     end
     function get_a(self)
-        return self.__a
+        return self.__c
     end
     function get_b(self)
         return self.b
