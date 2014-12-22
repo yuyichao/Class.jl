@@ -36,6 +36,15 @@ end
 
 abstract object
 
+immutable BoundMethod
+    self::object
+    func::Function
+end
+
+function Base.call(meth::BoundMethod, args...; kws...)
+    return meth.func(meth.self, args...; kws...)
+end
+
 # Use array to keep the order for now
 class_methods = Dict{Type, Array{(Symbol, Module), 1}}()
 class_members = Dict{Type, Array{(Symbol, Type), 1}}()

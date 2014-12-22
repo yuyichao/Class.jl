@@ -136,7 +136,7 @@ function gen_class_ast(type_name, this_class, base_class, body)
         end
     end
     for (func_name, func_module) in func_names
-        push!(new_body.args, Expr(:(::), func_name, :Function))
+        push!(new_body.args, Expr(:(::), func_name, :(Main.Class.BoundMethod)))
     end
 
     function get_func_module(fname)
@@ -179,13 +179,8 @@ function gen_class_ast(type_name, this_class, base_class, body)
 
     function gen_mem_func_def(fname, func_module)
         meth_name = get_func_fullname(func_module, fname)
-        tmp_func_name = gensym("method#$fname")
-        # Hack because anonymous function does not allow keyword argument yet
         quote
-            function $tmp_func_name(_args...; _kwargs...)
-                return $meth_name($tmp_self, _args...; _kwargs...)
-            end
-            $tmp_self.$fname = $tmp_func_name;
+            $tmp_self.$fname = Main.Class.BoundMethod($tmp_self, $meth_name)
         end
     end
 
