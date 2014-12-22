@@ -98,15 +98,15 @@ macro class(head::Union(Symbol, Expr), body::Expr)
         $(esc(class_ast))
         _reg_type($esc_name, $func_names, $esc_type_name)
 
-        function Base.convert(T::Type{$esc_name}, v)
+        function Base.convert(::Type{$esc_name}, v)
             return convert($esc_type_name, v)
         end
 
-        function Base.call(T::Type{$esc_name}, args...; kwargs...)
+        function Base.call(::Type{$esc_name}, args...; kwargs...)
             return call($esc_type_name, args...; kwargs...)
         end
 
-        function Base.show(io::Base.IO, x::Type{$esc_type_name})
+        function Base.show(io::Base.IO, ::Type{$esc_type_name})
             return show(io, $esc_name)
         end
 

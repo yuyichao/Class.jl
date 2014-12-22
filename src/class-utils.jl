@@ -219,6 +219,7 @@ function Base.show(io::IO, x::object)
     show(io, t)
     print(io, '(')
 
+    recorded = false
     oid = object_id(x)
     shown_set = get(task_local_storage(), :SHOWNSET, nothing)
     if shown_set == nothing
@@ -226,23 +227,30 @@ function Base.show(io::IO, x::object)
         task_local_storage(:SHOWNSET, shown_set)
     end
 
-    if oid in shown_set
-        print(io, "#= circular reference =#")
-    else
-        push!(shown_set, oid)
+    try
+        if oid in shown_set
+            print(io, "#= circular reference =#")
+        else
+            push!(shown_set, oid)
+            recorded = true
 
-        n = length(mems)
-        for i = 1:n
-            f = mems[i][1]
+            n = length(mems)
+            for i = 1:n
+                f = mems[i][1]
 
-            if !isdefined(x, f)
-                print(io, undef_ref_str)
-            else
-                show(io, x.(f))
+                if !isdefined(x, f)
+                    print(io, undef_ref_str)
+                else
+                    show(io, x.(f))
+                end
+                if i < n
+                    print(io, ',')
+                end
             end
-            if i < n
-                print(io, ',')
-            end
+        end
+    finally
+        if recorded
+            delete!(shown_set, oid)
         end
     end
     print(io,')')
