@@ -21,6 +21,41 @@ include("class-utils.jl")
 
 eval(Expr(:export, _class_method(:__class_init__)))
 
+function _transform_class_def!(prefix::String, ex::Symbol)
+    sym_name = string(ex)
+    name_len = length(sym_name)
+    if (name_len >= 3 && sym_name[1:2] == "__" &&
+        sym_name[name_len - 1:name_len] != "__")
+        return Symbol("$prefix$sym_name")
+    end
+    return ex
+end
+
+function _transform_class_def!(prefix::String, ex::Expr)
+    if (ex.head == :macrocall && length(ex.args) == 1 &&
+        isa(ex.args[1], Symbol))
+        sym_name = string(ex.args[1])
+        name_len = length(sym_name)
+        if (name_len >= 4 && sym_name[1:3] == "@__" &&
+            sym_name[name_len - 1:name_len] != "__")
+            return Expr(:quote, Symbol(sym_name[2:end]))
+        end
+    end
+    for i = 1:length(ex.args)
+        ex.args[i] = _transform_class_def!(prefix, ex.args[i])
+    end
+    return ex
+end
+
+function _transform_class_def!(prefix::String, ex::QuoteNode)
+    _transform_class_def!(prefix, ex.value)
+    return ex
+end
+
+function _transform_class_def!(prefix::String, ex)
+    return ex
+end
+
 macro class(head::Union(Symbol, Expr), body::Expr)
     # TODO? support parametrized type
     if isa(head, Symbol)
@@ -40,6 +75,8 @@ macro class(head::Union(Symbol, Expr), body::Expr)
     if body.head != :block
         error("Class body is not a block")
     end
+
+    _transform_class_def!("_$type_name", body)
 
     class_ast, func_names = gen_class_ast(type_name, name, base_class, body)
 
@@ -161,8 +198,8 @@ function gen_class_ast(type_name, this_class, base_class, body)
             Main.Class.@class_method(__class_init__)($tmp_self, args...;
                                                      kwargs...)
             finalizer($tmp_self, Main.Class._class_finalize)
-            return $tmp_self
-            end))
+              return $tmp_self
+          end))
 
     func_defs = Expr(:block, funcs...)
     type_def = Expr(:type, true, Expr(:<:, type_name, this_class), new_body)

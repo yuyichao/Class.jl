@@ -14,25 +14,25 @@
 using Class
 
 @class BaseClass begin
-    a::Int
+    __a::Int
     b::Float32
     function __class_init__(self, a::Int, b::Float32)
-        self.a = a
+        self.__a = a
         self.b = b
     end
     function __class_init__(self, a::Int)
-        self.a = a
+        self.__a = a
         self.b = a
     end
     function __class_init__(self)
-        self.a = 0
+        self.__a = 0
         self.b = 0
     end
     function method(self)
         return BaseClass
     end
     function get_a(self)
-        return self.a
+        return self.__a
     end
     function get_b(self)
         return self.b
@@ -40,7 +40,7 @@ using Class
 end
 
 @class DerivedClass <: BaseClass begin
-    c
+    __c
     d
     function __class_init__(self)
         self.__class_init__(0, 0)
@@ -49,18 +49,25 @@ end
         @method_chain __class_init__(self, c::Any, d::Any)
     end
     function __class_init__(self, c, d, args...)
-        self.c = c
+        self.__c = c
         self.d = d
         @method_chain __class_init__(self::BaseClass, args...)
     end
     function method(self)
         return (@method_chain method(self::BaseClass)), DerivedClass
     end
+    function __get_c(self)
+        return self.__c
+    end
     function get_c(self)
-        return self.c
+        return self.__get_c()
     end
     function get_d(self)
         return self.d
+    end
+
+    function return_sym(self)
+        return @__sym
     end
 end
 
@@ -101,6 +108,8 @@ println(d::object)
 @assert d.get_b() == 4
 @assert d.get_c() == 1
 @assert d.get_d() == 2
+
+@assert d.return_sym() == :__sym
 
 @assert del_counter == 0
 finalize(DelClass())
