@@ -118,8 +118,7 @@ function _chain_gen(ex::Expr)
     tmp_func = gensym("func")
     etmp_func = esc(tmp_func)
 
-    patch_types = quote
-    end
+    patch_types = Expr(:block)
 
     for idx in 1:length(args)
         arg = args[idx]
@@ -128,6 +127,10 @@ function _chain_gen(ex::Expr)
                   $tmp_types_l[$idx] = chain_convert_type($(esc(arg.args[2])))
                   end)
         end
+    end
+
+    if isempty(patch_types.args)
+        return ex
     end
 
     call_non_generic = copy(ex)
@@ -151,32 +154,29 @@ function _chain_gen(ex::Expr)
 end
 
 function chain_call_with_types(f, orig_types, new_types, args, kwargs)
-    if isempty(kwargs)
-        meth = chain_get_method(f, orig_types, new_types)
-        return meth.func(args...)
+    if !isempty(kwargs)
+        # The following code is translated from c code in jl_f_kwcall
+        # from (builtins.c). It is necessary to manually handle the keyword
+        # arguments before non-generic function support keyword arguments.
+        if !isdefined(f.env, :kwsorter)
+            error("function $(f.env.name) does not accept keyword arguments")
+        end
+        f = f.env.kwsorter
+        kwlen = length(kwargs)
+        ary = Array(Any, 2 * kwlen)
+
+        for i in 1:kwlen
+            ary[2 * i - 1] = kwargs[i][1]
+            ary[2 * i] = kwargs[i][2]
+        end
+
+        orig_types = tuple(Array, orig_types...)
+        new_types = tuple(Array, new_types...)
+        args = tuple(ary, args...)
     end
 
-    # The following code is translated from c code in jl_f_kwcall (builtins.c)
-    # This is necessary to manually handle the keyword arguments before
-    # non-generic function support keyword arguments.
-    if !isdefined(f.env, :kwsorter)
-        error("function $(f.env.name) does not accept keyword arguments")
-    end
-    sorter = f.env.kwsorter
-    meth = chain_get_method(sorter, tuple(Array, orig_types...),
-                            tuple(Array, new_types...))
-    func = meth.func
-
-    kwlen = length(kwargs)
-    ary = Array(Any, 2 * kwlen)
-
-    for i in 1:kwlen
-        ary[2 * i - 1] = kwargs[i][1]
-        ary[2 * i] = kwargs[i][2]
-    end
-
-    return ccall(func.fptr, Any, (Any, Ptr{Void}, UInt32),
-                 func, Any[ary, args...], length(args) + 1)
+    meth = chain_get_method(f, orig_types, new_types)
+    return meth.func(args...)
 end
 
 macro chain(ex::Expr)
