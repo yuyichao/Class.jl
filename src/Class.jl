@@ -58,6 +58,7 @@ end
 
 macro class(head::Union(Symbol, Expr), body::Expr)
     # TODO? support parametrized type
+    const cur_module::Module = current_module()
     if isa(head, Symbol)
         name = head
         esc_base_name = :(object)
@@ -69,7 +70,7 @@ macro class(head::Union(Symbol, Expr), body::Expr)
         end
         esc_base_name = esc(head.args[3])
         name = head.args[1]::Symbol
-        base_class = current_module().eval(head.args[3])
+        base_class = cur_module.eval(head.args[3])
     end
     type_name = gensym("class#$name")
     if body.head != :block
@@ -78,7 +79,8 @@ macro class(head::Union(Symbol, Expr), body::Expr)
 
     _transform_class_def!("_$type_name", body)
 
-    class_ast, func_names = gen_class_ast(type_name, name, base_class, body)
+    class_ast, func_names = gen_class_ast(cur_module, type_name,
+                                          name, base_class, body)
 
     esc_name = esc(name)
     esc_type_name = esc(type_name)
@@ -114,9 +116,11 @@ macro class(head::Union(Symbol, Expr), body::Expr)
     end
 end
 
-function gen_class_ast(type_name, this_class, base_class, body)
+function gen_class_ast(cur_module::Module, type_name::Symbol,
+                       this_class::Symbol, base_class::Type, body::Expr)
     func_names = copy(class_methods[base_class])
     funcs = Any[]
+    const cur_module_name = fullname(cur_module)
 
     new_body = Expr(:block)
     for (m_name::Symbol, m_type::Type) in class_members[base_class]
@@ -131,22 +135,17 @@ function gen_class_ast(type_name, this_class, base_class, body)
         end
         func_name = expr.args[1].args[1]
         push!(funcs, expr)
-        if !any(map((f) -> (f[1] == func_name), func_names))
-            push!(func_names, (func_name, current_module()))
+        if !haskey(func_names, func_name)
+            push!(func_names, func_name, cur_module_name)
         end
     end
     for (func_name, func_module) in func_names
         push!(new_body.args, Expr(:(::), func_name, :(Main.Class.BoundMethod)))
     end
 
-    function get_func_module(fname)
-        idx = findfirst((f) -> (f[1] == fname), func_names)
-        return func_names[idx][2]
-    end
-
     function get_func_fullname(func_module, fname)
         meth_name = :Main
-        for field in [fullname(func_module)..., _class_method(fname)]
+        for field in [func_module..., _class_method(fname)]
             meth_name = :($meth_name.$field)
         end
         return meth_name
@@ -155,8 +154,8 @@ function gen_class_ast(type_name, this_class, base_class, body)
     for f in funcs
         sig = f.args[1].args
 
-        func_module = get_func_module(sig[1])
-        if func_module != current_module()
+        func_module = func_names[sig[1]]
+        if func_module != cur_module_name
             sig[1] = get_func_fullname(func_module, sig[1])
         else
             sig[1] = _class_method(sig[1])

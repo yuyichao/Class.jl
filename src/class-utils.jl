@@ -13,6 +13,8 @@
 
 const _method_prefix = gensym("class_method")
 
+using DataStructures
+
 function _class_method(ex::Symbol)
     Symbol("$_method_prefix:#$ex")
 end
@@ -46,17 +48,17 @@ function Base.call(meth::BoundMethod, args...; kws...)
 end
 
 # Use array to keep the order for now
-class_methods = Dict{Type, Array{(Symbol, Module), 1}}()
+class_methods = Dict{Type, OrderedDict{Symbol, (Symbol...)}}()
 class_members = Dict{Type, Array{(Symbol, Type), 1}}()
 class_types = Dict{Type, Type}()
 
-function _reg_type(t::Type, meths::Array{(Symbol, Module), 1}, real_type)
+function _reg_type(t::Type, meths::OrderedDict{Symbol, (Symbol...)}, real_type)
     class_types[t] = real_type
     class_methods[t] = meths
     class_members[t] = members = (Symbol, Type)[]
     for (m_name::Symbol, m_type::Type) in zip(real_type.names,
                                               real_type.types)
-        if any(map((f) -> (f[1] == m_name), meths))
+        if haskey(meths, m_name)
             continue
         end
         push!(members, (m_name, m_type))
@@ -69,8 +71,12 @@ end
 function @class_method(__class_del__)(::object)
 end
 
-_reg_type(object, [(:__class_init__, current_module()),
-                   (:__class_del__, current_module())], object)
+let cur_module_name = fullname(current_module())
+    local func_names = OrderedDict{Symbol, (Symbol...)}()
+    push!(func_names, :__class_init__, cur_module_name)
+    push!(func_names, :__class_del__, cur_module_name)
+    _reg_type(object, func_names, object)
+end
 
 function _class_finalize(self::object)
     t = (typeof(self),)
