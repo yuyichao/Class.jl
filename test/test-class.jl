@@ -39,6 +39,7 @@ using Class
     end
 end
 
+# ex = quote
 @class DerivedClass <: BaseClass begin
     __c
     d
@@ -70,6 +71,11 @@ end
         return @__sym
     end
 end
+# end
+
+# println(macroexpand(ex))
+
+# eval(ex)
 
 del_counter = 0
 @class DelClass <: DerivedClass begin

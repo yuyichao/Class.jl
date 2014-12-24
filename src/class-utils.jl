@@ -52,7 +52,8 @@ class_methods = Dict{Type, OrderedDict{Symbol, (Symbol...)}}()
 class_members = Dict{Type, Array{(Symbol, Type), 1}}()
 class_types = Dict{Type, Type}()
 
-function _reg_type(t::Type, meths::OrderedDict{Symbol, (Symbol...)}, real_type)
+function _reg_type(t::Type, meths::OrderedDict{Symbol, (Symbol...)},
+                   real_type::Type)
     class_types[t] = real_type
     class_methods[t] = meths
     class_members[t] = members = (Symbol, Type)[]
@@ -91,30 +92,17 @@ function chain_args_and_types(args...; kwargs...)
     return Base.typesof(args...), args, kwargs
 end
 
-function chain_convert_type(t::Type)
-    if isa(t, Tuple)
-        return tuple([chain_convert_type(sub_t) for sub_t in t]...)
-    else
-        try
-            return class_types[t]
-        catch
-            return t
-        end
-    end
-end
-
 function _method_chain_gen(ex::Expr)
     if ex.head != :call
         error("Expect function call")
     end
     ex.args[1] = _class_method(ex.args[1])
-    return _chain_gen(ex)
+    return _chain_gen(ex, false)
 end
 
-function _chain_gen(ex::Expr)
+function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
     # TODO, arguments with default value is not supported yet
     # just too lazy to do it
-    # TODO handle non-generic functions
     if ex.head != :call
         error("Expect function call")
     end
@@ -139,7 +127,7 @@ function _chain_gen(ex::Expr)
         arg = args[idx]
         if isa(arg, Expr) && arg.head == :(::)
             push!(patch_types.args, quote
-                  $tmp_types_l[$idx] = chain_convert_type($(esc(arg.args[2])))
+                  $tmp_types_l[$idx] = $(esc(arg.args[2]))
                   end)
         end
     end
@@ -148,27 +136,35 @@ function _chain_gen(ex::Expr)
         return ex
     end
 
-    call_non_generic = copy(ex)
-    call_non_generic.args[1] = tmp_func
+    call_gf = quote
+        ($tmp_types, $tmp_args, $tmp_kwargs) = $(esc(call_helper))
+        $tmp_types_l = Type[$tmp_types...]
+        $patch_types
+        chain_call_with_types($etmp_func, $tmp_types, $tmp_types_l,
+                              $tmp_args, $tmp_kwargs)
+    end
 
-    quote
-        let
+    if maybe_non_gf
+        call_non_generic = copy(ex)
+        call_non_generic.args[1] = tmp_func
+        quote
             $etmp_func = $(esc(ex.args[1]))
             if !isgeneric($etmp_func)
                 $(esc(call_non_generic))
             else
-                ($tmp_types, $tmp_args, $tmp_kwargs) = $(esc(call_helper))
-                $tmp_types_l = Type[$tmp_types...]
-                $patch_types
-                chain_call_with_types($etmp_func, $tmp_types,
-                                      tuple($tmp_types_l...),
-                                      $tmp_args, $tmp_kwargs)
+                $call_gf
             end
+        end
+    else
+        quote
+            $etmp_func = $(esc(ex.args[1]))
+            $call_gf
         end
     end
 end
 
-function chain_call_with_types(f, orig_types, new_types, args, kwargs)
+function chain_call_with_types(f::Function, orig_types, new_types::Array{Type},
+                               args, kwargs)
     if !isempty(kwargs)
         # The following code is translated from c code in jl_f_kwcall
         # from (builtins.c). It is necessary to manually handle the keyword
@@ -186,11 +182,11 @@ function chain_call_with_types(f, orig_types, new_types, args, kwargs)
         end
 
         orig_types = tuple(Array, orig_types...)
-        new_types = tuple(Array, new_types...)
+        insert!(new_types, 1, Array)
         args = tuple(ary, args...)
     end
 
-    meth = chain_get_method(f, orig_types, new_types)
+    meth = chain_get_method(f, orig_types, tuple(new_types...))
     return meth.func(args...)
 end
 
@@ -202,7 +198,7 @@ macro method_chain(ex::Expr)
     return _method_chain_gen(ex)
 end
 
-function chain_get_method(f, orig_types, new_types)
+function chain_get_method(f::Function, orig_types, new_types)
     meths = methods(f, new_types)
     for idx = length(meths):-1:1
         if new_types <: meths[idx].sig
@@ -220,7 +216,7 @@ function Base.show(io::IO, x::object)
         return @chain show(io, x::ANY)
     end
 
-    mems = class_members[super(t)]
+    mems = class_members[class_base]
 
     show(io, t)
     print(io, '(')
