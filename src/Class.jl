@@ -30,13 +30,15 @@ function _transform_class_def!(prefix::String, ex::Symbol)
 end
 
 function _transform_class_def!(prefix::String, ex::Expr)
-    if (ex.head == :macrocall && length(ex.args) == 1 &&
-        isa(ex.args[1], Symbol))
-        sym_name = string(ex.args[1])
-        name_len = length(sym_name)
-        if (name_len >= 4 && sym_name[1:3] == "@__" &&
-            sym_name[name_len - 1:name_len] != "__")
-            return Expr(:quote, Symbol(sym_name[2:end]))
+    if ex.head == :macrocall
+        # Transform @__XXX to :__XXX without mangling
+        if length(ex.args) == 1 && isa(ex.args[1], Symbol)
+            sym_name = string(ex.args[1])
+            name_len = length(sym_name)
+            if (name_len >= 4 && sym_name[1:3] == "@__" &&
+                sym_name[name_len - 1:name_len] != "__")
+                return Symbol(sym_name[2:end])
+            end
         end
     end
     for i = 1:length(ex.args)

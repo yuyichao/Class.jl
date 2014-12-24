@@ -39,6 +39,8 @@ using Class
     end
 end
 
+const __global_sym = gensym()
+
 # ex = quote
 @class DerivedClass <: BaseClass begin
     __c
@@ -68,7 +70,11 @@ end
     end
 
     function return_sym(self)
-        return @__sym
+        return :(@__sym)
+    end
+
+    function return_global_sym(self)
+        return @__global_sym
     end
 end
 # end
@@ -116,6 +122,7 @@ println(d::object)
 @assert d.get_d() == 2
 
 @assert d.return_sym() == :__sym
+@assert d.return_global_sym() == __global_sym
 
 @assert del_counter == 0
 finalize(DelClass())
