@@ -11,6 +11,8 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this library.
 
+export @chain, @method_chain, @is_toplevel
+
 # Check if the current scope is the global module scope
 macro is_toplevel()
     tmp_var = gensym("toplevel_test")
@@ -43,7 +45,7 @@ function Base.call(meth::BoundMethod, args...; kws...)
     return meth.func(meth.self, args...; kws...)
 end
 
-function chain_get_method(f::Function, orig_types, new_types)
+@inline function _chain_get_method(f::Function, orig_types, new_types)
     meths = methods(f, new_types)
     for idx = length(meths):-1:1
         if new_types <: meths[idx].sig
@@ -54,8 +56,8 @@ function chain_get_method(f::Function, orig_types, new_types)
     error("Cannot find method")
 end
 
-function chain_call_with_types(f::Function, orig_types, new_types::Array{Type},
-                               args, kwargs)
+function _chain_call_with_types(f::Function, orig_types, new_types::Array{Type},
+                                args, kwargs)
     if !isempty(kwargs)
         # The following code is translated from c code in jl_f_kwcall
         # from (builtins.c). It is necessary to manually handle the keyword
@@ -77,14 +79,16 @@ function chain_call_with_types(f::Function, orig_types, new_types::Array{Type},
         args = tuple(ary, args...)
     end
 
-    meth = chain_get_method(f, orig_types, tuple(new_types...))
+    meth = _chain_get_method(f, orig_types, tuple(new_types...))
     return meth.func(args...)
 end
 
-function chain_args_and_types(args...; kwargs...)
+function _chain_args_and_types(args...; kwargs...)
     return Base.typesof(args...), args, kwargs
 end
 
+# TODO figure out which class is calling the macro and construct the full
+# name of the function so that method_chain do not require exporting method
 function _method_chain_gen(ex::Expr)
     if ex.head != :call
         error("Expect function call")
@@ -98,7 +102,7 @@ function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
         error("Expect function call")
     end
     call_helper = copy(ex)
-    call_helper.args[1] = :(Main.Class.chain_args_and_types)
+    call_helper.args[1] = :(Main.Class._chain_args_and_types)
 
     start_idx = (isa(ex.args[2], Expr) &&
                  ex.args[2].head == :parameters) ? 3 : 2
@@ -131,8 +135,8 @@ function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
         ($tmp_types, $tmp_args, $tmp_kwargs) = $(esc(call_helper))
         $tmp_types_l = Type[$tmp_types...]
         $patch_types
-        chain_call_with_types($etmp_func, $tmp_types, $tmp_types_l,
-                              $tmp_args, $tmp_kwargs)
+        _chain_call_with_types($etmp_func, $tmp_types, $tmp_types_l,
+                               $tmp_args, $tmp_kwargs)
     end
 
     if maybe_non_gf

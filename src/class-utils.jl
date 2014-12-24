@@ -13,8 +13,10 @@
 
 include("utils.jl")
 
-
 using DataStructures
+
+export object
+eval(Expr(:export, _class_method(:__class_init__)))
 
 abstract object
 

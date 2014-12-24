@@ -15,11 +15,9 @@ module Class
 
 using Base
 
-export @class, object, @chain, @method_chain, @is_toplevel
+export @class
 
 include("class-utils.jl")
-
-eval(Expr(:export, _class_method(:__class_init__)))
 
 function _transform_class_def!(prefix::String, ex::Symbol)
     sym_name = string(ex)
@@ -183,17 +181,21 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
         end
     end
 
-    push!(new_body.args,
-          :(function $type_name(args...; kwargs...)
+    init_name = _class_method(:__class_init__)
+
+    constructor = quote
+        function $type_name(args...; kwargs...)
             $tmp_self = new()
             $(Expr(:block,
                    [gen_mem_func_def(meth_name, func_module)
                     for (meth_name, func_module) in func_names]...))
-            Main.Class.@class_method(__class_init__)($tmp_self, args...;
-                                                     kwargs...)
-            finalizer($tmp_self, Main.Class._class_finalize)
-              return $tmp_self
-          end))
+            (Main.Class.$init_name)($tmp_self, args...; kwargs...)
+            Main.Base.finalizer($tmp_self, Main.Class._class_finalize)
+            return $tmp_self
+        end
+    end
+
+    push!(new_body.args, constructor)
 
     func_defs = Expr(:block, funcs...)
     type_def = Expr(:type, true, Expr(:<:, type_name, this_class), new_body)
