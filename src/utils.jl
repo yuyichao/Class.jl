@@ -19,8 +19,7 @@ macro is_toplevel()
     quote
         $(esc(tmp_var)) = true
         try
-            current_module().$tmp_var
-            true
+            current_module().$tmp_var === true
         catch
             false
         end
