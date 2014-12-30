@@ -31,6 +31,10 @@ function _class_method(ex::Symbol)
     Symbol("$_method_prefix:#$ex")
 end
 
+function _class_method(ex)
+    error("Expect symbol")
+end
+
 macro class_method(ex::Symbol)
     esc(_class_method(ex))
 end
@@ -100,7 +104,7 @@ function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
         error("Expect function call")
     end
     call_helper = copy(ex)
-    call_helper.args[1] = :(Main.Class._chain_args_and_types)
+    call_helper.args[1] = _chain_args_and_types
 
     start_idx = (isa(ex.args[2], Expr) &&
                  ex.args[2].head == :parameters) ? 3 : 2
