@@ -20,16 +20,34 @@ eval(Expr(:export, _class_method(:__class_init__)))
 
 abstract object
 
-# Use array to keep the order for now
-class_methods = Dict{Type, OrderedDict{Symbol, (Symbol...)}}()
-class_members = Dict{Type, Array{(Symbol, Type), 1}}()
-class_types = Dict{Type, Type}()
+function @class_method(__class_init__)(::object)
+end
 
-function _reg_type(t::Type, meths::OrderedDict{Symbol, (Symbol...)},
-                   real_type::Type)
-    class_types[t] = real_type
-    class_methods[t] = meths
-    class_members[t] = members = (Symbol, Type)[]
+function @class_method(__class_del__)(::object)
+end
+
+function _get_class_type(::Type{object})
+    return object
+end
+
+function _get_class_members(::Type{object})
+    return (Symbol, Type)[]
+end
+
+let cur_module_name = fullname(current_module())
+    global _get_class_methods
+    local func_names = OrderedDict{Symbol, (Symbol...)}()
+    push!(func_names, :__class_init__, cur_module_name)
+    push!(func_names, :__class_del__, cur_module_name)
+    function _get_class_methods(::Type{object})
+        return func_names
+    end
+end
+
+function _class_extract_members(t::Type,
+                                meths::OrderedDict{Symbol, (Symbol...)},
+                                real_type::Type)
+    members = (Symbol, Type)[]
     for (m_name::Symbol, m_type::Type) in zip(real_type.names,
                                               real_type.types)
         if haskey(meths, m_name)
@@ -37,19 +55,7 @@ function _reg_type(t::Type, meths::OrderedDict{Symbol, (Symbol...)},
         end
         push!(members, (m_name, m_type))
     end
-end
-
-function @class_method(__class_init__)(::object)
-end
-
-function @class_method(__class_del__)(::object)
-end
-
-let cur_module_name = fullname(current_module())
-    local func_names = OrderedDict{Symbol, (Symbol...)}()
-    push!(func_names, :__class_init__, cur_module_name)
-    push!(func_names, :__class_del__, cur_module_name)
-    _reg_type(object, func_names, object)
+    return members
 end
 
 function _class_finalize(self::object)
@@ -64,11 +70,13 @@ end
 function Base.show(io::IO, x::object)
     t = typeof(x)::DataType
     class_base = super(t)
-    if !haskey(class_types, class_base) || t != class_types[class_base]
+    try
+        _get_class_type(class_base)
+    catch
         return @chain show(io, x::ANY)
     end
 
-    mems = class_members[class_base]
+    mems = _get_class_members(class_base)
 
     show(io, t)
     print(io, '(')

@@ -19,14 +19,13 @@ using Class
     function __class_init__(self, a::Int, b::Float32)
         self.__c = a
         self.b = b
+        @method_chain __class_init__(self::object)
     end
     function __class_init__(self, a::Int)
-        self.__c = a
-        self.b = a
+        @method_chain __class_init__(self::BaseClass, a, Float32(a))
     end
     function __class_init__(self)
-        self.__c = 0
-        self.b = 0
+        @method_chain __class_init__(self::BaseClass, 0)
     end
     function method(self)
         return BaseClass

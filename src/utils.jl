@@ -132,18 +132,18 @@ function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
     end
 
     call_gf = quote
-        ($tmp_types, $tmp_args, $tmp_kwargs) = $(esc(call_helper))
-        $tmp_types_l = Type[$tmp_types...]
+        const ($tmp_types, $tmp_args, $tmp_kwargs) = $(esc(call_helper))
+        const $tmp_types_l = Type[$tmp_types...]
         $patch_types
         _chain_call_with_types($etmp_func, $tmp_types, $tmp_types_l,
                                $tmp_args, $tmp_kwargs)
     end
 
-    if maybe_non_gf
+    return if maybe_non_gf
         call_non_generic = copy(ex)
         call_non_generic.args[1] = tmp_func
         quote
-            $etmp_func = $(esc(ex.args[1]))
+            const $etmp_func = $(esc(ex.args[1]))
             if !isgeneric($etmp_func)
                 $(esc(call_non_generic))
             else
@@ -152,7 +152,7 @@ function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
         end
     else
         quote
-            $etmp_func = $(esc(ex.args[1]))
+            const $etmp_func = $(esc(ex.args[1]))
             $call_gf
         end
     end

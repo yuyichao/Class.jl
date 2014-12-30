@@ -40,6 +40,11 @@ function _transform_class_def!(prefix::String, ex::Expr)
                 return Symbol(sym_name[2:end])
             end
         end
+
+        # # Transform @method_chain(...) to @_method_chain(class, ...)
+        # if length(ex.args) >= 1 && ex.args[1] == :method_chain
+        #     ex.args[1] = :_method_chain
+        # end
     end
     for i = 1:length(ex.args)
         ex.args[i] = _transform_class_def!(prefix, ex.args[i])
@@ -60,19 +65,20 @@ macro class(head::Union(Symbol, Expr), body::Expr)
     # TODO? support parametrized type
     const cur_module::Module = current_module()
     if isa(head, Symbol)
-        name = head
-        esc_base_name = :(object)
-        base_class = object
+        name = head::Symbol
+        base_class = object::Type
     else
         if (head.head != :comparison || length(head.args) != 3 ||
-            head.args[2] != :<:)
+            head.args[2] != :(<:))
             error("Invalid class declaration: $head.")
         end
-        esc_base_name = esc(head.args[3])
         name = head.args[1]::Symbol
-        base_class = cur_module.eval(head.args[3])
+        base_class = cur_module.eval(head.args[3])::Type
+        if !(base_class <: object)
+            error("Base class $base_class is not a sub class of object")
+        end
     end
-    type_name = gensym("class#$name")
+    type_name::Symbol = gensym("class#$name")
     if body.head != :block
         error("Class body is not a block")
     end
@@ -85,15 +91,26 @@ macro class(head::Union(Symbol, Expr), body::Expr)
     esc_name = esc(name)
     esc_type_name = esc(type_name)
 
+    tmp_mems = gensym("members")
+
     return quote
-        if ! ($esc_base_name <: object)
-            error(string("Base class ", $esc_base_name,
-                         " is not a sub class of object"))
-        end
-        abstract $esc_name <: $esc_base_name
+        abstract $esc_name <: $base_class
 
         $(esc(class_ast))
-        _reg_type($esc_name, $func_names, $esc_type_name)
+
+        function Class._get_class_type(::Type{$esc_name})
+            return $esc_type_name
+        end
+
+        function Class._get_class_methods(::Type{$esc_name})
+            return $func_names
+        end
+
+        const $tmp_mems = _class_extract_members($esc_name, $func_names,
+                                                 $esc_type_name)
+        function Class._get_class_members(::Type{$esc_name})
+            return $tmp_mems
+        end
 
         function Base.convert(::Type{$esc_name}, v)
             return convert($esc_type_name, v)
@@ -113,12 +130,12 @@ end
 
 function gen_class_ast(cur_module::Module, type_name::Symbol,
                        this_class::Symbol, base_class::Type, body::Expr)
-    func_names = copy(class_methods[base_class])
+    func_names = copy(_get_class_methods(base_class))
     funcs = Any[]
     const cur_module_name = fullname(cur_module)
 
     new_body = Expr(:block)
-    for (m_name::Symbol, m_type::Type) in class_members[base_class]
+    for (m_name::Symbol, m_type::Type) in _get_class_members(base_class)
         push!(new_body.args, Expr(:(::), m_name, Symbol(string(m_type.name))))
     end
     for expr in body.args
@@ -135,7 +152,7 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
         end
     end
     for (func_name, func_module) in func_names
-        push!(new_body.args, Expr(:(::), func_name, :(Main.Class.BoundMethod)))
+        push!(new_body.args, Expr(:(::), func_name, BoundMethod))
     end
 
     function get_func_fullname(func_module, fname)
@@ -174,11 +191,11 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
     function gen_mem_func_def(fname, func_module)
         meth_name = get_func_fullname(func_module, fname)
         quote
-            $tmp_self.$fname = Main.Class.BoundMethod($tmp_self, $meth_name)
+            $tmp_self.$fname = $BoundMethod($tmp_self, $meth_name)
         end
     end
 
-    init_name = _class_method(:__class_init__)
+    init_func = @class_method __class_init__
 
     constructor = quote
         function $type_name(args...; kwargs...)
@@ -186,8 +203,8 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
             $(Expr(:block,
                    [gen_mem_func_def(meth_name, func_module)
                     for (meth_name, func_module) in func_names]...))
-            (Main.Class.$init_name)($tmp_self, args...; kwargs...)
-            Main.Base.finalizer($tmp_self, Main.Class._class_finalize)
+            $init_func($tmp_self, args...; kwargs...)
+            $finalizer($tmp_self, $_class_finalize)
             return $tmp_self
         end
     end
