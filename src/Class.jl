@@ -86,12 +86,7 @@ macro class(head::Union(Symbol, Expr), body::Expr)
     esc_type_name = esc(type_name)
 
     return quote
-        if !@is_toplevel
-            error("Class can only be defined at module top level.")
-        end
-
-        $esc_base_name::Type
-        if ! ($esc_base_name <: object && $esc_base_name.abstract)
+        if ! ($esc_base_name <: object)
             error(string("Base class ", $esc_base_name,
                          " is not a sub class of object"))
         end
