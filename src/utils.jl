@@ -44,7 +44,7 @@ function Base.call(meth::BoundMethod, args...; kws...)
     return meth.func(meth.self, args...; kws...)
 end
 
-@inline function _chain_get_method(f::Function, orig_types, new_types)
+@inline function _chain_get_method(f::Function, new_types)
     meths = methods(f, new_types)
     for idx = length(meths):-1:1
         if new_types <: meths[idx].sig
@@ -55,7 +55,7 @@ end
     error("Cannot find method")
 end
 
-function _chain_call_with_types(f::Function, orig_types, new_types::Array{Type},
+function _chain_call_with_types(f::Function, new_types::Array{Type},
                                 args, kwargs)
     if !isempty(kwargs)
         # The following code is translated from c code in jl_f_kwcall
@@ -73,12 +73,11 @@ function _chain_call_with_types(f::Function, orig_types, new_types::Array{Type},
             ary[2 * i] = kwargs[i][2]
         end
 
-        orig_types = tuple(Array, orig_types...)
         insert!(new_types, 1, Array)
         args = tuple(ary, args...)
     end
 
-    meth = _chain_get_method(f, orig_types, tuple(new_types...))
+    meth = _chain_get_method(f, tuple(new_types...))
     return meth.func(args...)
 end
 
@@ -134,7 +133,7 @@ function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
         const ($tmp_types, $tmp_args, $tmp_kwargs) = $(esc(call_helper))
         const $tmp_types_l = Type[$tmp_types...]
         $patch_types
-        _chain_call_with_types($etmp_func, $tmp_types, $tmp_types_l,
+        _chain_call_with_types($etmp_func, $tmp_types_l,
                                $tmp_args, $tmp_kwargs)
     end
 
@@ -142,17 +141,21 @@ function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
         call_non_generic = copy(ex)
         call_non_generic.args[1] = tmp_func
         quote
-            const $etmp_func = $(esc(ex.args[1]))
-            if !isgeneric($etmp_func)
-                $(esc(call_non_generic))
-            else
-                $call_gf
+            let
+                const $etmp_func = $(esc(ex.args[1]))
+                if !isgeneric($etmp_func)
+                    $(esc(call_non_generic))
+                else
+                    $call_gf
+                end
             end
         end
     else
         quote
-            const $etmp_func = $(esc(ex.args[1]))
-            $call_gf
+            let
+                const $etmp_func = $(esc(ex.args[1]))
+                $call_gf
+            end
         end
     end
 end
