@@ -128,6 +128,11 @@ macro class(head::Union(Symbol, Expr), body::Expr)
     end
 end
 
+# This should work even if the way `A <: B` is parsed changes
+function gen_type_head(typ, base)
+    return :(abstract $typ <: $base).args[1]
+end
+
 function gen_class_ast(cur_module::Module, type_name::Symbol,
                        this_class::Symbol, base_class::Type, body::Expr)
     func_names = copy(_get_class_methods(base_class))
@@ -212,7 +217,8 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
     push!(new_body.args, constructor)
 
     func_defs = Expr(:block, funcs...)
-    type_def = Expr(:type, true, Expr(:<:, type_name, this_class), new_body)
+    type_def = Expr(:type, true,
+                    gen_type_head(type_name, this_class), new_body)
 
     quote
         $type_def
