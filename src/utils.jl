@@ -26,9 +26,12 @@ macro is_toplevel()
     end
 end
 
-const _method_prefix = gensym("class_method")
+# TODO check ABI version at runtime??
+const class_abi_version = 1
+
+const class_method_prefix = Symbol("##class_method.$class_abi_version")
 function _class_method(ex::Symbol)
-    Symbol("$_method_prefix:#$ex")
+    Symbol("$class_method_prefix:##$ex")
 end
 
 function _class_method(ex)
