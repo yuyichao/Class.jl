@@ -77,7 +77,7 @@ function transform_class_def!(ex::QuoteNode, prefix::String, base_class::Type)
     return ex
 end
 
-function transform_class_def!(ex, prefix::String, base_class::Type)
+function transform_class_def!(ex::ANY, prefix::String, base_class::Type)
     return ex
 end
 
@@ -111,36 +111,39 @@ macro class(head::Union(Symbol, Expr), body::Expr)
     const esc_name = esc(name)
     const esc_type_name = esc(type_name)
 
-    const tmp_mems = gensym("members")
+    const tmp_mems::Symbol = gensym("members")
 
     return quote
         abstract $esc_name <: $base_class
 
         $(esc(class_ast))
 
-        function Class.get_class_type(::Type{$esc_name})
+        @inline function Class.get_class_type(::Type{$esc_name})
             return $esc_type_name
         end
 
-        function Class.get_class_methods(::Type{$esc_name})
+        @inline function Class.get_class_methods(::Type{$esc_name})
             return $func_names
         end
 
         const $tmp_mems = _class_extract_members($esc_name, $func_names,
                                                  $esc_type_name)
-        function Class.get_class_members(::Type{$esc_name})
+        @inline function Class.get_class_members(::Type{$esc_name})
             return $tmp_mems
         end
 
         function Base.convert(::Type{$esc_name}, v)
+            $(esc(Expr(:meta, :inline)))
             return convert($esc_type_name, v)
         end
 
         function Base.call(::Type{$esc_name}, args...; kwargs...)
+            $(esc(Expr(:meta, :inline)))
             return call($esc_type_name, args...; kwargs...)
         end
 
         function Base.show(io::Base.IO, ::Type{$esc_type_name})
+            $(esc(Expr(:meta, :inline)))
             return show(io, $esc_name)
         end
 

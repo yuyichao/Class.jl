@@ -40,47 +40,47 @@ end
 
 const __global_sym = gensym()
 
-# ex = quote
-@class DerivedClass <: BaseClass begin
-    __c
-    d
-    function __class_init__(self)
-        self.__class_init__(0, 0)
-    end
-    function __class_init__(self, c::Int64, d::Float32)
-        @mchain __class_init__(self, c::Any, d::Any)
-    end
-    function __class_init__(self, c, d, args...)
-        self.__c = c
-        self.d = d
-        @mchain __class_init__(self::BaseClass, args...)
-    end
-    function method(self)
-        return (@mchain method(self::BaseClass)), DerivedClass
-    end
-    function __get_c(self)
-        return self.__c
-    end
-    function get_c(self)
-        return self.__get_c()
-    end
-    function get_d(self)
-        return self.d
-    end
+derived_ex = quote
+    @class DerivedClass <: BaseClass begin
+        __c
+        d
+        function __class_init__(self)
+            self.__class_init__(0, 0)
+        end
+        function __class_init__(self, c::Int64, d::Float32)
+            @mchain __class_init__(self, c::Any, d::Any)
+        end
+        function __class_init__(self, c, d, args...)
+            self.__c = c
+            self.d = d
+            @mchain __class_init__(self::BaseClass, args...)
+        end
+        function method(self)
+            return (@mchain method(self::BaseClass)), DerivedClass
+        end
+        function __get_c(self)
+            return self.__c
+        end
+        function get_c(self)
+            return self.__get_c()
+        end
+        function get_d(self)
+            return self.d
+        end
 
-    function return_sym(self)
-        return :(@__sym)
-    end
+        function return_sym(self)
+            return :(@__sym)
+        end
 
-    function return_global_sym(self)
-        return @__global_sym
+        function return_global_sym(self)
+            return @__global_sym
+        end
     end
 end
-# end
 
-# println(macroexpand(ex))
+# println(macroexpand(derived_ex))
 
-# eval(ex)
+eval(derived_ex)
 
 del_counter = 0
 @class DelClass <: DerivedClass begin

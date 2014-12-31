@@ -15,11 +15,11 @@ export @chain, @is_toplevel
 
 # Check if the current scope is the global module scope
 macro is_toplevel()
-    tmp_var = gensym("toplevel_test")
+    @gensym toplevel_test
     quote
-        $(esc(tmp_var)) = true
+        $(esc(toplevel_test)) = true
         try
-            current_module().$tmp_var === true
+            current_module().$toplevel_test === true
         catch
             false
         end
@@ -34,7 +34,7 @@ function _class_method(ex::Symbol)
     Symbol("$class_method_prefix:##$ex")
 end
 
-function _class_method(ex)
+function _class_method(ex::ANY)
     error("Expect symbol")
 end
 
@@ -104,11 +104,11 @@ function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
 
     args = ex.args[start_idx:end]
 
-    tmp_types = gensym("orig_arg_types")
-    tmp_types_l = gensym("requested_types")
-    tmp_args = gensym("positional_arguments")
-    tmp_kwargs = gensym("keyword_arguments")
-    tmp_func = gensym("func")
+    @gensym orig_types
+    @gensym new_types
+    @gensym args_val
+    @gensym kwargs_val
+    @gensym tmp_func
     etmp_func = esc(tmp_func)
 
     patch_types = Expr(:block)
@@ -117,7 +117,7 @@ function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
         arg = args[idx]
         if isa(arg, Expr) && arg.head == :(::)
             push!(patch_types.args, quote
-                  $tmp_types_l[$idx] = $(esc(arg.args[2]))
+                  $new_types[$idx] = $(esc(arg.args[2]))
                   end)
         end
     end
@@ -127,11 +127,11 @@ function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
     end
 
     call_gf = quote
-        const ($tmp_types, $tmp_args, $tmp_kwargs) = $(esc(call_helper))
-        const $tmp_types_l = Type[$tmp_types...]
+        const ($orig_types, $args_val, $kwargs_val) = $(esc(call_helper))
+        const $new_types = Type[$orig_types...]
         $patch_types
-        _chain_call_with_types($etmp_func, $tmp_types_l,
-                               $tmp_args, $tmp_kwargs)
+        _chain_call_with_types($etmp_func, $new_types,
+                               $args_val, $kwargs_val)
     end
 
     return if maybe_non_gf
