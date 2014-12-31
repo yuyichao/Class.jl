@@ -19,7 +19,7 @@ export @class
 
 include("class-utils.jl")
 
-function transform_class_def!(ex::Symbol, prefix::String)
+function transform_class_def!(ex::Symbol, prefix::String, base_class::Type)
     const sym_name = string(ex)
     const name_len = length(sym_name)
     if (name_len >= 3 && sym_name[1:2] == "__" &&
@@ -29,7 +29,7 @@ function transform_class_def!(ex::Symbol, prefix::String)
     return ex
 end
 
-function transform_class_def!(ex::Expr, prefix::String)
+function transform_class_def!(ex::Expr, prefix::String, base_class::Type)
     if ex.head == :macrocall
         # Transform @__XXX to :__XXX without mangling
         if length(ex.args) == 1 && isa(ex.args[1], Symbol)
@@ -41,23 +41,43 @@ function transform_class_def!(ex::Expr, prefix::String)
             end
         end
 
-        # # Transform @method_chain(...) to @_method_chain(class, ...)
-        # if length(ex.args) >= 1 && ex.args[1] == :method_chain
-        #     ex.args[1] = :_method_chain
-        # end
+        # Transform @mchain(...)
+        if ex.args[1] == Symbol("@mchain")
+            if length(ex.args) != 2
+                error("Wrong number of arguments to @mchain")
+            end
+            ex.args[1] = Symbol("@chain")
+            const chain_ex::Expr = ex.args[2]
+            if chain_ex.head != :call
+                error("Expect function call")
+            end
+            const meth_name::Symbol = chain_ex.args[1]
+            const class_methods = get_class_methods(base_class)
+            if haskey(class_methods, meth_name)
+                chain_ex.args[1] = gen_func_fullname(class_methods[meth_name],
+                                                     meth_name)
+            else
+                chain_ex.args[1] = _class_method(meth_name)
+            end
+            for i = 2:length(chain_ex.args)
+                chain_ex.args[i] = transform_class_def!(chain_ex.args[i],
+                                                        prefix, base_class)
+            end
+            return ex
+        end
     end
     for i = 1:length(ex.args)
-        ex.args[i] = transform_class_def!(ex.args[i], prefix)
+        ex.args[i] = transform_class_def!(ex.args[i], prefix, base_class)
     end
     return ex
 end
 
-function transform_class_def!(ex::QuoteNode, prefix::String)
-    transform_class_def!(ex.value, prefix)
+function transform_class_def!(ex::QuoteNode, prefix::String, base_class::Type)
+    transform_class_def!(ex.value, prefix, base_class)
     return ex
 end
 
-function transform_class_def!(ex, prefix::String)
+function transform_class_def!(ex, prefix::String, base_class::Type)
     return ex
 end
 
@@ -83,7 +103,7 @@ macro class(head::Union(Symbol, Expr), body::Expr)
         error("Class body is not a block")
     end
 
-    transform_class_def!(body, "_$type_name")
+    transform_class_def!(body, "_$type_name", base_class)
 
     const class_ast, func_names = gen_class_ast(cur_module, type_name,
                                                 name, base_class, body)

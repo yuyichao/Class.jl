@@ -11,7 +11,7 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this library.
 
-export @chain, @method_chain, @is_toplevel
+export @chain, @is_toplevel
 
 # Check if the current scope is the global module scope
 macro is_toplevel()
@@ -89,16 +89,6 @@ function _chain_args_and_types(args...; kwargs...)
     return Base.typesof(args...), args, kwargs
 end
 
-# TODO figure out which class is calling the macro and construct the full
-# name of the function so that method_chain do not require exporting method
-function _method_chain_gen(ex::Expr)
-    if ex.head != :call
-        error("Expect function call")
-    end
-    ex.args[1] = _class_method(ex.args[1])
-    return _chain_gen(ex, false)
-end
-
 function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
     if ex.head != :call
         error("Expect function call")
@@ -114,7 +104,7 @@ function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
     tmp_types = gensym("orig_arg_types")
     tmp_types_l = gensym("requested_types")
     tmp_args = gensym("positional_arguments")
-    tmp_kwargs = gensym("keyword_arguments (not supported yet)")
+    tmp_kwargs = gensym("keyword_arguments")
     tmp_func = gensym("func")
     etmp_func = esc(tmp_func)
 
@@ -168,6 +158,6 @@ macro chain(ex::Expr)
     return _chain_gen(ex)
 end
 
-macro method_chain(ex::Expr)
-    return _method_chain_gen(ex)
+macro mchain(ex::Expr)
+    error("@mchain can only be used in a class definition.")
 end

@@ -19,13 +19,13 @@ using Class
     function __class_init__(self, a::Int, b::Float32)
         self.__c = a
         self.b = b
-        @method_chain __class_init__(self::object)
+        @mchain __class_init__(self::object)
     end
     function __class_init__(self, a::Int)
-        @method_chain __class_init__(self::BaseClass, a, Float32(a))
+        @mchain __class_init__(self::BaseClass, a, Float32(a))
     end
     function __class_init__(self)
-        @method_chain __class_init__(self::BaseClass, 0)
+        @mchain __class_init__(self::BaseClass, 0)
     end
     function method(self)
         return BaseClass
@@ -48,15 +48,15 @@ const __global_sym = gensym()
         self.__class_init__(0, 0)
     end
     function __class_init__(self, c::Int64, d::Float32)
-        @method_chain __class_init__(self, c::Any, d::Any)
+        @mchain __class_init__(self, c::Any, d::Any)
     end
     function __class_init__(self, c, d, args...)
         self.__c = c
         self.d = d
-        @method_chain __class_init__(self::BaseClass, args...)
+        @mchain __class_init__(self::BaseClass, args...)
     end
     function method(self)
-        return (@method_chain method(self::BaseClass)), DerivedClass
+        return (@mchain method(self::BaseClass)), DerivedClass
     end
     function __get_c(self)
         return self.__c
