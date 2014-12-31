@@ -19,7 +19,7 @@ export @class
 
 include("class-utils.jl")
 
-function _transform_class_def!(prefix::String, ex::Symbol)
+function _transform_class_def!(ex::Symbol, prefix::String)
     sym_name = string(ex)
     name_len = length(sym_name)
     if (name_len >= 3 && sym_name[1:2] == "__" &&
@@ -29,7 +29,7 @@ function _transform_class_def!(prefix::String, ex::Symbol)
     return ex
 end
 
-function _transform_class_def!(prefix::String, ex::Expr)
+function _transform_class_def!(ex::Expr, prefix::String)
     if ex.head == :macrocall
         # Transform @__XXX to :__XXX without mangling
         if length(ex.args) == 1 && isa(ex.args[1], Symbol)
@@ -47,17 +47,17 @@ function _transform_class_def!(prefix::String, ex::Expr)
         # end
     end
     for i = 1:length(ex.args)
-        ex.args[i] = _transform_class_def!(prefix, ex.args[i])
+        ex.args[i] = _transform_class_def!(ex.args[i], prefix)
     end
     return ex
 end
 
-function _transform_class_def!(prefix::String, ex::QuoteNode)
-    _transform_class_def!(prefix, ex.value)
+function _transform_class_def!(ex::QuoteNode, prefix::String)
+    _transform_class_def!(ex.value, prefix)
     return ex
 end
 
-function _transform_class_def!(prefix::String, ex)
+function _transform_class_def!(ex, prefix::String)
     return ex
 end
 
@@ -83,7 +83,7 @@ macro class(head::Union(Symbol, Expr), body::Expr)
         error("Class body is not a block")
     end
 
-    _transform_class_def!("_$type_name", body)
+    _transform_class_def!(body, "_$type_name")
 
     class_ast, func_names = gen_class_ast(cur_module, type_name,
                                           name, base_class, body)
