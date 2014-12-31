@@ -19,9 +19,9 @@ export @class
 
 include("class-utils.jl")
 
-function _transform_class_def!(ex::Symbol, prefix::String)
-    sym_name = string(ex)
-    name_len = length(sym_name)
+function transform_class_def!(ex::Symbol, prefix::String)
+    const sym_name = string(ex)
+    const name_len = length(sym_name)
     if (name_len >= 3 && sym_name[1:2] == "__" &&
         sym_name[name_len - 1:name_len] != "__")
         return Symbol("$prefix$sym_name")
@@ -29,12 +29,12 @@ function _transform_class_def!(ex::Symbol, prefix::String)
     return ex
 end
 
-function _transform_class_def!(ex::Expr, prefix::String)
+function transform_class_def!(ex::Expr, prefix::String)
     if ex.head == :macrocall
         # Transform @__XXX to :__XXX without mangling
         if length(ex.args) == 1 && isa(ex.args[1], Symbol)
-            sym_name = string(ex.args[1])
-            name_len = length(sym_name)
+            const sym_name = string(ex.args[1])
+            const name_len = length(sym_name)
             if (name_len >= 4 && sym_name[1:3] == "@__" &&
                 sym_name[name_len - 1:name_len] != "__")
                 return Symbol(sym_name[2:end])
@@ -47,17 +47,17 @@ function _transform_class_def!(ex::Expr, prefix::String)
         # end
     end
     for i = 1:length(ex.args)
-        ex.args[i] = _transform_class_def!(ex.args[i], prefix)
+        ex.args[i] = transform_class_def!(ex.args[i], prefix)
     end
     return ex
 end
 
-function _transform_class_def!(ex::QuoteNode, prefix::String)
-    _transform_class_def!(ex.value, prefix)
+function transform_class_def!(ex::QuoteNode, prefix::String)
+    transform_class_def!(ex.value, prefix)
     return ex
 end
 
-function _transform_class_def!(ex, prefix::String)
+function transform_class_def!(ex, prefix::String)
     return ex
 end
 
@@ -78,37 +78,37 @@ macro class(head::Union(Symbol, Expr), body::Expr)
             error("Base class $base_class is not a sub class of object")
         end
     end
-    type_name::Symbol = gensym("class#$name")
+    const type_name::Symbol = gensym("class#$name")
     if body.head != :block
         error("Class body is not a block")
     end
 
-    _transform_class_def!(body, "_$type_name")
+    transform_class_def!(body, "_$type_name")
 
-    class_ast, func_names = gen_class_ast(cur_module, type_name,
-                                          name, base_class, body)
+    const class_ast, func_names = gen_class_ast(cur_module, type_name,
+                                                name, base_class, body)
 
-    esc_name = esc(name)
-    esc_type_name = esc(type_name)
+    const esc_name = esc(name)
+    const esc_type_name = esc(type_name)
 
-    tmp_mems = gensym("members")
+    const tmp_mems = gensym("members")
 
     return quote
         abstract $esc_name <: $base_class
 
         $(esc(class_ast))
 
-        function Class._get_class_type(::Type{$esc_name})
+        function Class.get_class_type(::Type{$esc_name})
             return $esc_type_name
         end
 
-        function Class._get_class_methods(::Type{$esc_name})
+        function Class.get_class_methods(::Type{$esc_name})
             return $func_names
         end
 
         const $tmp_mems = _class_extract_members($esc_name, $func_names,
                                                  $esc_type_name)
-        function Class._get_class_members(::Type{$esc_name})
+        function Class.get_class_members(::Type{$esc_name})
             return $tmp_mems
         end
 
@@ -133,14 +133,29 @@ function gen_type_head(typ, base)
     return :(abstract $typ <: $base).args[1]
 end
 
+function gen_func_fullname(func_mod::(Symbol...), fname::Symbol)
+    meth_name = :Main
+    for field in [func_mod..., _class_method(fname)]
+        meth_name = :($meth_name.$field)
+    end
+    return meth_name
+end
+
+function gen_mem_func_def(self::Symbol, func_mod::(Symbol...), fname::Symbol)
+    const meth_name = gen_func_fullname(func_mod, fname)
+    quote
+        $self.$fname = $BoundMethod($self, $meth_name)
+    end
+end
+
 function gen_class_ast(cur_module::Module, type_name::Symbol,
                        this_class::Symbol, base_class::Type, body::Expr)
-    func_names = copy(_get_class_methods(base_class))
-    funcs = Any[]
+    const func_names = copy(get_class_methods(base_class))
+    const funcs = Any[]
     const cur_module_name = fullname(cur_module)
 
-    new_body = Expr(:block)
-    for (m_name::Symbol, m_type::Type) in _get_class_members(base_class)
+    const new_body = Expr(:block)
+    for (m_name::Symbol, m_type::Type) in get_class_members(base_class)
         push!(new_body.args, Expr(:(::), m_name, Symbol(string(m_type.name))))
     end
     for expr in body.args
@@ -150,30 +165,22 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
             push!(new_body.args, expr)
             continue
         end
-        func_name = expr.args[1].args[1]
+        const func_name = expr.args[1].args[1]
         push!(funcs, expr)
         if !haskey(func_names, func_name)
             push!(func_names, func_name, cur_module_name)
         end
     end
-    for (func_name, func_module) in func_names
+    for (func_name, func_mod) in func_names
         push!(new_body.args, Expr(:(::), func_name, BoundMethod))
-    end
-
-    function get_func_fullname(func_module, fname)
-        meth_name = :Main
-        for field in [func_module..., _class_method(fname)]
-            meth_name = :($meth_name.$field)
-        end
-        return meth_name
     end
 
     for f in funcs
         sig = f.args[1].args
 
-        func_module = func_names[sig[1]]
-        if func_module != cur_module_name
-            sig[1] = get_func_fullname(func_module, sig[1])
+        const func_mod = func_names[sig[1]]
+        if func_mod != cur_module_name
+            sig[1] = gen_func_fullname(func_mod, sig[1])
         else
             sig[1] = _class_method(sig[1])
         end
@@ -191,23 +198,14 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
         end
     end
 
-    tmp_self = gensym("class#self")
-
-    function gen_mem_func_def(fname, func_module)
-        meth_name = get_func_fullname(func_module, fname)
-        quote
-            $tmp_self.$fname = $BoundMethod($tmp_self, $meth_name)
-        end
-    end
-
-    init_func = @class_method __class_init__
-
-    constructor = quote
+    const tmp_self = gensym("class#self")
+    const init_func = @class_method __class_init__
+    const constructor = quote
         function $type_name(args...; kwargs...)
-            $tmp_self = new()
+            const $tmp_self = new()
             $(Expr(:block,
-                   [gen_mem_func_def(meth_name, func_module)
-                    for (meth_name, func_module) in func_names]...))
+                   [gen_mem_func_def(tmp_self, func_mod, meth_name)
+                    for (meth_name, func_mod) in func_names]...))
             $init_func($tmp_self, args...; kwargs...)
             $finalizer($tmp_self, $_class_finalize)
             return $tmp_self
@@ -216,9 +214,9 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
 
     push!(new_body.args, constructor)
 
-    func_defs = Expr(:block, funcs...)
-    type_def = Expr(:type, true,
-                    gen_type_head(type_name, this_class), new_body)
+    const func_defs = Expr(:block, funcs...)
+    const type_def = Expr(:type, true,
+                          gen_type_head(type_name, this_class), new_body)
 
     quote
         $type_def

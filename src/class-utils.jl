@@ -26,20 +26,20 @@ end
 function @class_method(__class_del__)(::object)
 end
 
-function _get_class_type(::Type{object})
+function get_class_type(::Type{object})
     return object
 end
 
-function _get_class_members(::Type{object})
+function get_class_members(::Type{object})
     return (Symbol, Type)[]
 end
 
 let cur_module_name = fullname(current_module())
-    global _get_class_methods
+    global get_class_methods
     local func_names = OrderedDict{Symbol, (Symbol...)}()
     push!(func_names, :__class_init__, cur_module_name)
     push!(func_names, :__class_del__, cur_module_name)
-    function _get_class_methods(::Type{object})
+    function get_class_methods(::Type{object})
         return func_names
     end
 end
@@ -71,12 +71,12 @@ function Base.show(io::IO, x::object)
     t = typeof(x)::DataType
     class_base = super(t)
     try
-        _get_class_type(class_base)
+        get_class_type(class_base)
     catch
         return @chain show(io, x::ANY)
     end
 
-    mems = _get_class_members(class_base)
+    mems = get_class_members(class_base)
 
     show(io, t)
     print(io, '(')
