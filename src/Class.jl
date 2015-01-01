@@ -51,6 +51,7 @@ function transform_class_def!(ex::Expr, prefix::String, base_class::Type)
             if chain_ex.head != :call
                 error("Expect function call")
             end
+            push!(ex.args, false)
             const meth_name::Symbol = chain_ex.args[1]
             const class_methods = get_class_methods(base_class)
             if haskey(class_methods, meth_name)

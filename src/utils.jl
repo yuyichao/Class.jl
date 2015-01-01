@@ -157,10 +157,10 @@ function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
     end
 end
 
-macro chain(ex::Expr)
-    return _chain_gen(ex)
+macro chain(args...)
+    return _chain_gen(args...)
 end
 
-macro mchain(ex::Expr)
+macro mchain(args...)
     error("@mchain can only be used in a class definition.")
 end
