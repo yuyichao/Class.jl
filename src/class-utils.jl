@@ -59,7 +59,7 @@ end
 function _class_extract_members(t::Type,
                                 meths::OrderedDict{Symbol, (Symbol...)},
                                 real_type::Type)
-    members = (Symbol, Type)[]
+    const members = (Symbol, Type)[]
     for (m_name::Symbol, m_type::Type) in zip(real_type.names,
                                               real_type.types)
         if haskey(meths, m_name)
