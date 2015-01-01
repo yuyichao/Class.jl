@@ -69,12 +69,10 @@ end
 function chain_invoke(f::Function, types::Tuple, args...; kws...)
     # FIXME, replace with the builtin invoke after it supports keyword arguments
     if isempty(kws)
-        # FIXME, replace with the builtin invoke after it is fixed
-        meth = _chain_get_method(f, types)
-        return meth.func(args...)
+        return invoke(f, types, args...)
     else
-        meth = _chain_get_method(get_kwsorter(f), tuple(Array, types...))
-        return meth.func(pack_kwargs(;kws...), args...)
+        return invoke(get_kwsorter(f), tuple(Array, types...),
+                      pack_kwargs(;kws...), args...)
     end
 end
 
@@ -82,16 +80,6 @@ function chain_invoke(bm::BoundMethod, types::Tuple, args...; kws...)
     f = bm.func
     return chain_invoke(f, tuple(typeof(bm.self), types...), bm.self,
                         args...; kws...)
-end
-
-function _chain_get_method(f::Function, new_types::ANY)
-    meths = methods(f, new_types)
-    for idx = length(meths):-1:1
-        if new_types <: meths[idx].sig
-            return meths[idx]
-        end
-    end
-    error("Cannot find method")
 end
 
 ## Generic function and BoundMethod of a generic function is chainable
