@@ -152,7 +152,7 @@ macro class(head::Union(Symbol, Expr), body::Expr)
 end
 
 # This should work even if the way `A <: B` is parsed changes
-function gen_type_head(typ, base)
+@inline function gen_type_head(typ, base)
     return :(abstract $typ <: $base).args[1]
 end
 
