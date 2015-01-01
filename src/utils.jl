@@ -94,6 +94,7 @@ function _chain_get_method(f::Function, new_types::ANY)
     error("Cannot find method")
 end
 
+## Generic function and BoundMethod of a generic function is chainable
 @inline function ischainable(v::BoundMethod)
     return isgeneric(v.func)
 end
@@ -121,6 +122,7 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
     ex.args[1] = func
 
     if maybe_non_gf
+        # Handle non-generic function case if necessary
         const check_gf = Expr(:if, :(!$ischainable($efunc)),
                               esc(ex), Expr(:block))
         push!(ins_pos.args, check_gf)
@@ -136,6 +138,8 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
     start_idx::Int
     const invoke_kw::Array{Expr, 1} = Expr[]
 
+    # Handle keyword arguments if necessary
+    # Keyword arguments are evaluated after all positional arguments
     if isa(ex.args[2], Expr) && ex.args[2].head == :parameters
         start_idx = 3
         push!(invoke_kw, ex.args[2])
@@ -149,12 +153,14 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
         const etmp_arg = esc(tmp_arg)
         if isa(arg, Expr) && arg.head == :(...)
             @assert length(arg.args) == 1
+            # Convert to tuple for typeof() and for iterating only once
             push!(ins_pos.args,
                   :(const $etmp_arg = $tuple($(esc(arg.args[1]))...)))
             push!(arg_types, Expr(:(...), :($typeof($tmp_arg))))
             push!(arg_vals, Expr(:(...), tmp_arg))
         elseif isa(arg, Expr) && arg.head == :(::)
             @assert length(arg.args) == 2
+            # Make sure both the value and the type are evaluated only once
             push!(ins_pos.args, :(const $etmp_arg = $(esc(arg.args[1]))))
             @gensym tmp_type
             const etmp_type = esc(tmp_type)
@@ -163,6 +169,7 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
             push!(arg_types, tmp_type)
             push!(arg_vals, tmp_arg)
         else
+            # Make sure the value is evaluated only once
             push!(ins_pos.args, :(const $etmp_arg = $(esc(arg))))
             push!(arg_types, :($typeof($tmp_arg)))
             push!(arg_vals, tmp_arg)
@@ -177,7 +184,6 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
 end
 
 macro chain(args...)
-    # TODO support BoundMethod
     return gen_chain_ast(args...)
 end
 

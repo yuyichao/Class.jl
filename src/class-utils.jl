@@ -30,14 +30,17 @@ using DataStructures
 
 export object
 
+# Base type for all classes
 abstract object
 
+## Constructor and destructor
 function @class_method(__class_init__)(::object)
 end
 
 function @class_method(__class_del__)(::object)
 end
 
+## Helper functions for query type info
 function get_class_type(::Type{object})
     return object
 end
@@ -70,15 +73,19 @@ function _class_extract_members(t::Type,
     return members
 end
 
+# Class finalizer
 function _class_finalize(self::object)
     t = (typeof(self),)
     for del_meth = methods(@class_method(__class_del__), (object,))
+        # Call all matches destructors in order
         if t <: del_meth.sig
             del_meth.func(self)
         end
     end
 end
 
+# Printing, print class name (not the real type name)
+# and only print real members (not including member functions)
 function Base.show(io::IO, x::object)
     t = typeof(x)::DataType
     class_base = super(t)

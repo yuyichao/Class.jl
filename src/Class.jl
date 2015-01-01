@@ -19,6 +19,8 @@ export @class
 
 include("class-utils.jl")
 
+## Transform class body for private members and @mchain
+
 function transform_class_def!(ex::Symbol, prefix::String, base_class::Type)
     const sym_name = string(ex)
     const name_len = length(sym_name)
@@ -55,9 +57,14 @@ function transform_class_def!(ex::Expr, prefix::String, base_class::Type)
             const meth_name::Symbol = chain_ex.args[1]
             const class_methods = get_class_methods(base_class)
             if haskey(class_methods, meth_name)
+                # If the method belongs to the parent class, convert
+                # to the fullname (including the module path) of the
+                # function
                 chain_ex.args[1] = gen_func_fullname(class_methods[meth_name],
                                                      meth_name)
             else
+                # Otherwise, assuming this is a new method and do only
+                # name mangling
                 chain_ex.args[1] = _class_method(meth_name)
             end
             for i = 2:length(chain_ex.args)
@@ -85,6 +92,8 @@ end
 macro class(head::Union(Symbol, Expr), body::Expr)
     # TODO? support parametrized type
     const cur_module::Module = current_module()
+    name::Symbol
+    base_class::Type
     if isa(head, Symbol)
         name = head::Symbol
         base_class = object::Type
@@ -119,6 +128,8 @@ macro class(head::Union(Symbol, Expr), body::Expr)
 
         $(esc(class_ast))
 
+        # Class info helpers
+
         @inline function Class.get_class_type(::Type{$esc_name})
             return $esc_type_name
         end
@@ -133,6 +144,7 @@ macro class(head::Union(Symbol, Expr), body::Expr)
             return $tmp_mems
         end
 
+        # Proxy certain function calls between the class type and the real type
         function Base.convert(::Type{$esc_name}, v)
             $(esc(Expr(:meta, :inline)))
             return convert($esc_type_name, v)
@@ -179,6 +191,7 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
     const cur_module_name = fullname(cur_module)
 
     const new_body = Expr(:block)
+    ## Includes members from parent type
     for (m_name::Symbol, m_type::Type) in get_class_members(base_class)
         push!(new_body.args, Expr(:(::), m_name, Symbol(string(m_type.name))))
     end
@@ -195,10 +208,12 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
             push!(func_names, func_name, cur_module_name)
         end
     end
+    ## Member functions
     for (func_name, func_mod) in func_names
         push!(new_body.args, Expr(:(::), func_name, BoundMethod))
     end
 
+    ## Member functions definitions
     for f in funcs
         sig = f.args[1].args
 
@@ -227,10 +242,14 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
     const constructor = quote
         function $type_name(args...; kwargs...)
             const $tmp_self = new()
+            # Fill in the slots for member functions
             $(Expr(:block,
                    [gen_mem_func_def(tmp_self, func_mod, meth_name)
                     for (meth_name, func_mod) in func_names]...))
+            # Call custom constructors
             $init_func($tmp_self, args...; kwargs...)
+            # Register distructor
+            # TODO handle the case when the constructor throws exception
             $finalizer($tmp_self, $_class_finalize)
             return $tmp_self
         end
