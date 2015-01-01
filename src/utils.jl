@@ -29,19 +29,6 @@ end
 # TODO check ABI version at runtime??
 const class_abi_version = 1
 
-const class_method_prefix = Symbol("##class_method.$class_abi_version")
-function _class_method(ex::Symbol)
-    Symbol("$class_method_prefix:##$ex")
-end
-
-function _class_method(ex::ANY)
-    error("Expect symbol")
-end
-
-macro class_method(ex::Symbol)
-    esc(_class_method(ex))
-end
-
 immutable BoundMethod
     self
     func::Function
