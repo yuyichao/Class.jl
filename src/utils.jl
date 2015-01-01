@@ -140,6 +140,7 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
 
     # Handle keyword arguments if necessary
     # Keyword arguments are evaluated after all positional arguments
+    # TODO handle all cases, e.g. f(a=2)
     if isa(ex.args[2], Expr) && ex.args[2].head == :parameters
         start_idx = 3
         push!(invoke_kw, ex.args[2])
