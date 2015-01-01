@@ -248,4 +248,6 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
     end, func_names
 end
 
+include("precompile.jl")
+
 end

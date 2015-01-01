@@ -11,7 +11,9 @@
 # You should have received a copy of the GNU Lesser General Public
 # License along with this library.
 
+tic()
 using Class
+toc()
 
 @class BaseClass begin
     __c::Int

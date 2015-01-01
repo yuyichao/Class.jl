@@ -38,7 +38,7 @@ immutable BoundMethod
 end
 
 # Proxy call to underlying function
-function Base.call(meth::BoundMethod, args...; kws...)
+function Base.call(meth::BoundMethod, args::ANY...; kws...)
     return meth.func(meth.self, args...; kws...)
 end
 
