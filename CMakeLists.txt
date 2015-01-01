@@ -9,6 +9,7 @@ include(JuliaMacros)
 include(CMakePathMacros)
 
 julia_site_path(julia_path)
+enable_testing()
 
 add_subdirectory(src)
 add_subdirectory(test)

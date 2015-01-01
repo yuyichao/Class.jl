@@ -103,6 +103,10 @@ println(d4)
     DerivedClass()
 end
 
+@time for i in 1:10000
+    BaseClass()
+end
+
 b = BaseClass(1, float32(2))
 d = DerivedClass(1, 2, 3, float32(4))
 
