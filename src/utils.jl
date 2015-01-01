@@ -42,13 +42,8 @@ function Base.call(meth::BoundMethod, args...; kws...)
     return meth.func(meth.self, args...; kws...)
 end
 
-immutable BoundKWSorter
-    self
-    func::Function
-end
-
 ## keyword arguments related helper functions
-# Needed before anonymous function supports keyword arguments
+# Needed before invoke supports keyword arguments
 
 # Pack keyword arguments, logic copied from jl_g_kwcall
 function pack_kwargs(;kws...)
@@ -69,32 +64,27 @@ function get_kwsorter(f::Function)
     return f.env.kwsorter
 end
 
-function get_kwsorter(bm::BoundMethod)
-    return BoundKWSorter(bm.self, get_kwsorter(bm.func))
+## Custom implementation of `invoke`
+# Supports keyword arguments and BoundMethod
+function chain_invoke(f::Function, types::Tuple, args...; kws...)
+    # FIXME, replace with the builtin invoke after it supports keyword arguments
+    if isempty(kws)
+        # FIXME, replace with the builtin invoke after it is fixed
+        meth = _chain_get_method(f, types)
+        return meth.func(args...)
+    else
+        meth = _chain_get_method(get_kwsorter(f), tuple(Array, types...))
+        return meth.func(pack_kwargs(;kws...), args...)
+    end
 end
 
-## FIXME
-# Custom implementation of invoke
-# Workaround before the bug of the builtin invoke is fixed
-# TODO implement keyword arguments
-function my_invoke(f::Function, types::Tuple, args...)
-    meth = _chain_get_method(f, types)
-    return meth.func(args...)
-end
-
-function my_invoke(bm::BoundMethod, types::Tuple, args...)
+function chain_invoke(bm::BoundMethod, types::Tuple, args...; kws...)
     f = bm.func
-    return my_invoke(f, tuple(typeof(bm.self), types...), bm.self, args...)
+    return chain_invoke(f, tuple(typeof(bm.self), types...), bm.self,
+                        args...; kws...)
 end
 
-# Need tests
-function my_invoke(bm::BoundKWSorter, types::Tuple, kw, args...)
-    f = bm.func
-    return my_invoke(f, tuple(types[1], typeof(bm.self), types[2:end]...),
-                     kw, bm.self, args...)
-end
-
-@inline function _chain_get_method(f::Function, new_types)
+function _chain_get_method(f::Function, new_types::ANY)
     meths = methods(f, new_types)
     for idx = length(meths):-1:1
         if new_types <: meths[idx].sig
@@ -104,13 +94,25 @@ end
     error("Cannot find method")
 end
 
+@inline function ischainable(v::BoundMethod)
+    return isgeneric(v.func)
+end
+
+@inline function ischainable(v::Function)
+    return isgeneric(v)
+end
+
+@inline function ischainable(::ANY)
+    return false
+end
+
 function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
     if ex.head != :call
         error("Expect function call")
     end
 
     @gensym func
-    efunc = esc(func)
+    const efunc = esc(func)
 
     ins_pos = quote
         const $efunc = $(esc(ex.args[1]))
@@ -119,8 +121,7 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
     ex.args[1] = func
 
     if maybe_non_gf
-        const check_gf = Expr(:if, :(!($isgeneric($efunc) ||
-                                       $isa($efunc, $BoundMethod))),
+        const check_gf = Expr(:if, :(!$ischainable($efunc)),
                               esc(ex), Expr(:block))
         push!(ins_pos.args, check_gf)
         ins_pos = check_gf.args[3]
@@ -128,18 +129,18 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
 
     const arg_types = Any[]
     const arg_vals = Any[]
+    sizehint!(arg_types, length(ex.args) - 1)
+    sizehint!(arg_vals, length(ex.args) - 1)
+    sizehint!(ins_pos.args, length(ex.args))
 
-    start_idx::Int = 2
+    start_idx::Int
+    const invoke_kw::Array{Expr, 1} = Expr[]
 
     if isa(ex.args[2], Expr) && ex.args[2].head == :parameters
         start_idx = 3
-        push!(arg_types, Array)
-        push!(arg_vals, Expr(:call, pack_kwargs, ex.args[2]))
-        @gensym func2
-        efunc2 = esc(func2)
-        push!(ins_pos.args, :(const $efunc2 = $get_kwsorter($efunc)))
-        func = func2
-        efunc = efunc2
+        push!(invoke_kw, ex.args[2])
+    else
+        start_idx = 2
     end
 
     for idx in start_idx:length(ex.args)
@@ -168,11 +169,11 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
         end
     end
 
-    push!(ins_pos.args, esc(Expr(:call, my_invoke, func,
-                                 Expr(:call, tuple, arg_types...),
+    push!(ins_pos.args, esc(Expr(:call, chain_invoke, invoke_kw...,
+                                 func, Expr(:call, tuple, arg_types...),
                                  arg_vals...)))
 
-    res
+    return res
 end
 
 macro chain(args...)
