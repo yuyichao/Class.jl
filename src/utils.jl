@@ -38,6 +38,33 @@ function Base.call(meth::BoundMethod, args...; kws...)
     return meth.func(meth.self, args...; kws...)
 end
 
+function pack_kwargs(;kws...)
+    kwlen = length(kws)
+    ary = Array(Any, 2 * kwlen)
+
+    for i in 1:kwlen
+        ary[2 * i - 1] = kws[i][1]
+        ary[2 * i] = kws[i][2]
+    end
+    return ary
+end
+
+# Needed before anonymous function supports keyword arguments
+function get_kwsorter(f::Function)
+    if !isdefined(f.env, :kwsorter)
+        error("function $(f.env.name) does not accept keyword arguments")
+    end
+    return f.env.kwsorter
+end
+
+get_types(args) = map(a->(isa(a, Type) ? Type{a} : typeof(a)), args)
+
+# FIXME Workaround before the builtin invoke is fixed
+function my_invoke(f::Function, types::Tuple, args...)
+    meth = _chain_get_method(f, types)
+    return meth.func(args...)
+end
+
 @inline function _chain_get_method(f::Function, new_types)
     meths = methods(f, new_types)
     for idx = length(meths):-1:1
@@ -45,107 +72,82 @@ end
             return meths[idx]
         end
     end
-    # TODO use no_method_error
     error("Cannot find method")
 end
 
-function _chain_call_with_types(f::Function, new_types::Array{Type},
-                                args, kwargs)
-    if !isempty(kwargs)
-        # The following code is translated from c code in jl_f_kwcall
-        # from (builtins.c). It is necessary to manually handle the keyword
-        # arguments before non-generic function support keyword arguments.
-        if !isdefined(f.env, :kwsorter)
-            error("function $(f.env.name) does not accept keyword arguments")
-        end
-        f = f.env.kwsorter
-        kwlen = length(kwargs)
-        ary = Array(Any, 2 * kwlen)
-
-        for i in 1:kwlen
-            ary[2 * i - 1] = kwargs[i][1]
-            ary[2 * i] = kwargs[i][2]
-        end
-
-        insert!(new_types, 1, Array)
-        args = tuple(ary, args...)
-    end
-
-    meth = _chain_get_method(f, tuple(new_types...))
-    return meth.func(args...)
-end
-
-function _chain_args_and_types(args...; kwargs...)
-    return Base.typesof(args...), args, kwargs
-end
-
-function _chain_gen(ex::Expr, maybe_non_gf::Bool=true)
+function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
     if ex.head != :call
         error("Expect function call")
     end
-    call_helper = copy(ex)
-    call_helper.args[1] = _chain_args_and_types
 
-    start_idx = (isa(ex.args[2], Expr) &&
-                 ex.args[2].head == :parameters) ? 3 : 2
+    @gensym func
+    efunc = esc(func)
 
-    args = ex.args[start_idx:end]
+    ins_pos = quote
+        const $efunc = $(esc(ex.args[1]))::$Function
+    end
+    const res = Expr(:let, ins_pos)
+    ex.args[1] = func
 
-    @gensym orig_types
-    @gensym new_types
-    @gensym args_val
-    @gensym kwargs_val
-    @gensym tmp_func
-    etmp_func = esc(tmp_func)
+    if maybe_non_gf
+        const check_gf = Expr(:if, :(!$isgeneric($efunc)),
+                              esc(ex), Expr(:block))
+        push!(ins_pos.args, check_gf)
+        ins_pos = check_gf.args[3]
+    end
 
-    patch_types = Expr(:block)
+    const arg_types = Any[]
+    const arg_vals = Any[]
 
-    for idx in 1:length(args)
-        arg = args[idx]
-        if isa(arg, Expr) && arg.head == :(::)
-            push!(patch_types.args, quote
-                  $new_types[$idx] = $(esc(arg.args[2]))
-                  end)
+    start_idx::Int = 2
+
+    if isa(ex.args[2], Expr) && ex.args[2].head == :parameters
+        start_idx = 3
+        push!(arg_types, Array)
+        push!(arg_vals, Expr(:call, pack_kwargs, ex.args[2]))
+        @gensym func2
+        efunc2 = esc(func2)
+        push!(ins_pos.args,
+              :(const $efunc2 = $get_kwsorter($efunc)::$Function))
+        func = func2
+        efunc = efunc2
+    end
+
+    for idx in start_idx:length(ex.args)
+        arg = ex.args[idx]
+        @gensym tmp_arg
+        const etmp_arg = esc(tmp_arg)
+        if isa(arg, Expr) && arg.head == :(...)
+            @assert length(arg.args) == 1
+            push!(ins_pos.args,
+                  :(const $etmp_arg = $tuple($(esc(arg.args[1]))...)))
+            push!(arg_types, Expr(:(...), :($get_types($tmp_arg))))
+            push!(arg_vals, Expr(:(...), tmp_arg))
+        elseif isa(arg, Expr) && arg.head == :(::)
+            @assert length(arg.args) == 2
+            push!(ins_pos.args, :(const $etmp_arg = $(esc(arg.args[1]))))
+            @gensym tmp_type
+            const etmp_type = esc(tmp_type)
+            push!(ins_pos.args,
+                  :(const $etmp_type = $(esc(arg.args[2]))::$Type))
+            push!(arg_types, tmp_type)
+            push!(arg_vals, tmp_arg)
+        else
+            push!(ins_pos.args, :(const $etmp_arg = $(esc(arg))))
+            push!(arg_types, :($typeof($tmp_arg)))
+            push!(arg_vals, tmp_arg)
         end
     end
 
-    if isempty(patch_types.args)
-        return ex
-    end
+    push!(ins_pos.args, esc(Expr(:call, my_invoke, func,
+                                 Expr(:call, tuple, arg_types...),
+                                 arg_vals...)))
 
-    call_gf = quote
-        const ($orig_types, $args_val, $kwargs_val) = $(esc(call_helper))
-        const $new_types = Type[$orig_types...]
-        $patch_types
-        _chain_call_with_types($etmp_func, $new_types,
-                               $args_val, $kwargs_val)
-    end
-
-    return if maybe_non_gf
-        call_non_generic = copy(ex)
-        call_non_generic.args[1] = tmp_func
-        quote
-            let
-                const $etmp_func = $(esc(ex.args[1]))
-                if !isgeneric($etmp_func)
-                    $(esc(call_non_generic))
-                else
-                    $call_gf
-                end
-            end
-        end
-    else
-        quote
-            let
-                const $etmp_func = $(esc(ex.args[1]))
-                $call_gf
-            end
-        end
-    end
+    res
 end
 
 macro chain(args...)
-    return _chain_gen(args...)
+    return gen_chain_ast(args...)
 end
 
 macro mchain(args...)
