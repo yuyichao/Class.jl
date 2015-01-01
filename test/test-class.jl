@@ -48,7 +48,7 @@ derived_ex = quote
             self.__class_init__(0, 0)
         end
         function __class_init__(self, c::Int64, d::Float32)
-            @mchain __class_init__(self, c::Any, d::Any)
+            @chain self.__class_init__(c::Any, d::Any)
         end
         function __class_init__(self, c, d, args...)
             self.__c = c
