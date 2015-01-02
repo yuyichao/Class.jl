@@ -66,7 +66,7 @@ end
 
 ## Custom implementation of `invoke`
 # Supports keyword arguments and BoundMethod
-function chain_invoke(f::Function, types::Tuple, args...; kws...)
+@inline function chain_invoke(f::Function, types::Tuple, args...; kws...)
     # FIXME, replace with the builtin invoke after it supports keyword arguments
     if isempty(kws)
         return invoke(f, types, args...)
@@ -76,10 +76,19 @@ function chain_invoke(f::Function, types::Tuple, args...; kws...)
     end
 end
 
-function chain_invoke(bm::BoundMethod, types::Tuple, args...; kws...)
+@inline function chain_invoke(bm::BoundMethod, types::Tuple, args...; kws...)
     f = bm.func
     return chain_invoke(f, tuple(typeof(bm.self), types...), bm.self,
                         args...; kws...)
+end
+
+@inline function chain_invoke_nokw(f::Function, types::Tuple, args...)
+    return invoke(f, types, args...)
+end
+
+@inline function chain_invoke_nokw(bm::BoundMethod, types::Tuple, args...)
+    f = bm.func
+    return invoke(f, tuple(typeof(bm.self), types...), bm.self, args...)
 end
 
 # Helper to generate arguments list that is evaluated in the correct order
@@ -126,6 +135,8 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
     const arg_vals = Any[]
     const get_args_res = Any[]
     const get_args_args = Any[]
+    has_kw::Bool = false
+    has_unpack::Bool = false
 
     for idx in 2:length(ex.args)
         arg = ex.args[idx]
@@ -133,10 +144,12 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
         const etmp_arg = esc(tmp_arg)
         if isa(arg, Expr)
             if arg.head == :parameters || arg.head == :kw
+                has_kw = true
                 push!(get_args_args, arg)
                 continue
             elseif arg.head == :(...)
                 @assert length(arg.args) == 1
+                has_unpack = true
                 # Convert to tuple for typeof() and for iterating only once
                 push!(get_args_args, :($tuple($arg)))
                 push!(get_args_res, tmp_arg)
@@ -169,17 +182,34 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
         push!(arg_vals, tmp_arg)
     end
 
-    @gensym kwargs
-    const ekwargs = esc(kwargs)
+    const types_arg = if has_unpack
+        Expr(:call, tuple, arg_types...)
+    else
+        Expr(:tuple, arg_types...)
+    end
 
-    push!(ins_pos.args,
-          esc(Expr(:const, Expr(:(=), Expr(:tuple, get_args_res..., kwargs),
-                                Expr(:call, get_args, get_args_args...)))))
+    if has_kw
+        @gensym kwargs
+        const ekwargs = esc(kwargs)
 
-    push!(ins_pos.args, esc(Expr(:call, chain_invoke,
-                                 Expr(:parameters, Expr(:(...), kwargs)),
-                                 func, Expr(:call, tuple, arg_types...),
-                                 arg_vals...)))
+        push!(ins_pos.args,
+              esc(Expr(:const, Expr(:(=), Expr(:tuple, get_args_res..., kwargs),
+                                    Expr(:call, get_args, get_args_args...)))))
+        push!(ins_pos.args, esc(Expr(:call, chain_invoke,
+                                     Expr(:parameters, Expr(:(...), kwargs)),
+                                     func, types_arg, arg_vals...)))
+    else
+        const pack_tuple = if has_unpack
+            Expr(:call, tuple, get_args_args...)
+        else
+            Expr(:tuple, get_args_args...)
+        end
+        push!(ins_pos.args,
+              esc(Expr(:const, Expr(:(=), Expr(:tuple, get_args_res...),
+                                    pack_tuple))))
+        push!(ins_pos.args, esc(Expr(:call, chain_invoke_nokw, func, types_arg,
+                                     arg_vals...)))
+    end
 
     return res
 end
