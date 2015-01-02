@@ -82,6 +82,8 @@ time_func(invoke_g)
 time_func(chain_g)
 time_func(chain_invoke_g)
 
+println()
+
 println("With keyword")
 time_func(call_g_kw)
 time_func(invoke_g_kw)
