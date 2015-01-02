@@ -89,7 +89,7 @@ function transform_class_def!(ex::ANY, prefix::String, base_class::Type)
     return ex
 end
 
-macro class(head::Union(Symbol, Expr), body::Expr)
+function _class(head::Union(Symbol, Expr), body::Expr)
     # TODO? support parametrized type
     const cur_module::Module = current_module()
     name::Symbol
@@ -126,7 +126,7 @@ macro class(head::Union(Symbol, Expr), body::Expr)
     return quote
         abstract $esc_name <: $base_class
 
-        $(esc(class_ast))
+        $(class_ast...)
 
         # Class info helpers
 
@@ -164,11 +164,6 @@ macro class(head::Union(Symbol, Expr), body::Expr)
     end
 end
 
-# This should work even if the way `A <: B` is parsed changes
-@inline function gen_type_head(typ, base)
-    return :(abstract $typ <: $base).args[1]
-end
-
 function gen_func_fullname(func_mod::(Symbol...), fname::Symbol)
     meth_name = :Main
     for field in [func_mod..., _class_method(fname)]
@@ -179,9 +174,7 @@ end
 
 function gen_mem_func_def(self::Symbol, func_mod::(Symbol...), fname::Symbol)
     const meth_name = gen_func_fullname(func_mod, fname)
-    quote
-        $self.$fname = $BoundMethod($self, $meth_name)
-    end
+    return :($self.$fname = $BoundMethod($self, $meth_name))
 end
 
 function gen_class_ast(cur_module::Module, type_name::Symbol,
@@ -190,16 +183,16 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
     const funcs = Any[]
     const cur_module_name = fullname(cur_module)
 
-    const new_body = Expr(:block)
+    const new_body = Any[]
     ## Includes members from parent type
     for (m_name::Symbol, m_type::Type) in get_class_members(base_class)
-        push!(new_body.args, Expr(:(::), m_name, Symbol(string(m_type.name))))
+        push!(new_body, Expr(:(::), m_name, m_type))
     end
     for expr in body.args
         if !(isa(expr, Expr) &&
              (expr.head == :(=) || expr.head == :function) &&
              expr.args[1].head == :call)
-            push!(new_body.args, expr)
+            push!(new_body, expr)
             continue
         end
         const func_name = expr.args[1].args[1]
@@ -210,7 +203,7 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
     end
     ## Member functions
     for (func_name, func_mod) in func_names
-        push!(new_body.args, Expr(:(::), func_name, BoundMethod))
+        push!(new_body, Expr(:(::), func_name, BoundMethod))
     end
 
     ## Member functions definitions
@@ -243,9 +236,8 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
         function $type_name(args...; kwargs...)
             const $tmp_self = new()
             # Fill in the slots for member functions
-            $(Expr(:block,
-                   [gen_mem_func_def(tmp_self, func_mod, meth_name)
-                    for (meth_name, func_mod) in func_names]...))
+            $([gen_mem_func_def(tmp_self, func_mod, meth_name)
+               for (meth_name, func_mod) in func_names]...)
             # Call custom constructors
             $init_func($tmp_self, args...; kwargs...)
             # Register distructor
@@ -255,16 +247,18 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
         end
     end
 
-    push!(new_body.args, constructor)
+    append!(new_body, constructor.args)
+    const type_def = quote
+        type $type_name <: $this_class
+            $(new_body...)
+        end
+    end
 
-    const func_defs = Expr(:block, funcs...)
-    const type_def = Expr(:type, true,
-                          gen_type_head(type_name, this_class), new_body)
+    return map(esc, [type_def.args, funcs]), func_names
+end
 
-    quote
-        $type_def
-        $func_defs
-    end, func_names
+macro class(head::Union(Symbol, Expr), body::Expr)
+    return _class(head, body)
 end
 
 include("precompile.jl")

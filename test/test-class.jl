@@ -80,11 +80,13 @@ derived_ex = quote
     end
 end
 
-expanded_derived_ast = macroexpand(derived_ex)
+print("macroexpand: ")
+@time expanded_derived_ast = macroexpand(derived_ex)
 
 # println(expanded_derived_ast)
 
-eval(expanded_derived_ast)
+print("eval: ")
+@time eval(expanded_derived_ast)
 
 del_counter = 0
 @class DelClass <: DerivedClass begin
