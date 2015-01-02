@@ -80,9 +80,11 @@ derived_ex = quote
     end
 end
 
-# println(macroexpand(derived_ex))
+expanded_derived_ast = macroexpand(derived_ex)
 
-eval(derived_ex)
+# println(expanded_derived_ast)
+
+eval(expanded_derived_ast)
 
 del_counter = 0
 @class DelClass <: DerivedClass begin
@@ -101,9 +103,13 @@ println(d2)
 println(d3)
 println(d4)
 
+gc()
+
 @time for i in 1:10000
     DerivedClass()
 end
+
+gc()
 
 @time for i in 1:10000
     BaseClass()

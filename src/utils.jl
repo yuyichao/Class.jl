@@ -82,6 +82,9 @@ function chain_invoke(bm::BoundMethod, types::Tuple, args...; kws...)
                         args...; kws...)
 end
 
+# Helper to generate arguments list that is evaluated in the correct order
+@inline get_args(args::ANY...; kws...) = tuple(args..., kws)
+
 ## Generic function and BoundMethod of a generic function is chainable
 @inline function ischainable(v::BoundMethod)
     return isgeneric(v.func)
@@ -117,55 +120,64 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
         ins_pos = check_gf.args[3]
     end
 
+    # construct a call to get_args() in order to evaluate all arguments and
+    # type assertions in the builtin order
     const arg_types = Any[]
     const arg_vals = Any[]
-    sizehint!(arg_types, length(ex.args) - 1)
-    sizehint!(arg_vals, length(ex.args) - 1)
-    sizehint!(ins_pos.args, length(ex.args))
+    const get_args_res = Any[]
+    const get_args_args = Any[]
 
-    start_idx::Int
-    const invoke_kw::Array{Expr, 1} = Expr[]
-
-    # Handle keyword arguments if necessary
-    # Keyword arguments are evaluated after all positional arguments
-    # TODO handle all cases, e.g. f(a=2)
-    if isa(ex.args[2], Expr) && ex.args[2].head == :parameters
-        start_idx = 3
-        push!(invoke_kw, ex.args[2])
-    else
-        start_idx = 2
-    end
-
-    for idx in start_idx:length(ex.args)
+    for idx in 2:length(ex.args)
         arg = ex.args[idx]
         @gensym tmp_arg
         const etmp_arg = esc(tmp_arg)
-        if isa(arg, Expr) && arg.head == :(...)
-            @assert length(arg.args) == 1
-            # Convert to tuple for typeof() and for iterating only once
-            push!(ins_pos.args,
-                  :(const $etmp_arg = $tuple($(esc(arg.args[1]))...)))
-            push!(arg_types, Expr(:(...), :($typeof($tmp_arg))))
-            push!(arg_vals, Expr(:(...), tmp_arg))
-        elseif isa(arg, Expr) && arg.head == :(::)
-            @assert length(arg.args) == 2
-            # Make sure both the value and the type are evaluated only once
-            push!(ins_pos.args, :(const $etmp_arg = $(esc(arg.args[1]))))
-            @gensym tmp_type
-            const etmp_type = esc(tmp_type)
-            push!(ins_pos.args,
-                  :(const $etmp_type = $(esc(arg.args[2]))::$Type))
-            push!(arg_types, tmp_type)
-            push!(arg_vals, tmp_arg)
-        else
-            # Make sure the value is evaluated only once
-            push!(ins_pos.args, :(const $etmp_arg = $(esc(arg))))
-            push!(arg_types, :($typeof($tmp_arg)))
-            push!(arg_vals, tmp_arg)
+        if isa(arg, Expr)
+            if arg.head == :parameters || arg.head == :kw
+                push!(get_args_args, arg)
+                continue
+            elseif arg.head == :(...)
+                @assert length(arg.args) == 1
+                # Convert to tuple for typeof() and for iterating only once
+                push!(get_args_args, :($tuple($arg)))
+                push!(get_args_res, tmp_arg)
+                push!(arg_types, Expr(:(...), :($typeof($tmp_arg))))
+                push!(arg_vals, Expr(:(...), tmp_arg))
+                continue
+            elseif arg.head == :(::)
+                @assert length(arg.args) == 2
+                # Make sure both the value and the type are evaluated only once
+                # The ::Any is added to make sure :(A...::B) (illegal now)
+                # is handled properly
+                push!(get_args_args, Expr(:(::), arg.args[1], Any))
+                push!(get_args_res, tmp_arg)
+
+                @gensym tmp_type
+                const etmp_type = esc(tmp_type)
+                push!(get_args_args, :($(arg.args[2])::$Type))
+                push!(get_args_res, tmp_type)
+
+                push!(arg_types, tmp_type)
+                push!(arg_vals, tmp_arg)
+                continue
+            end
         end
+
+        # Make sure the value is evaluated only once
+        push!(get_args_args, arg)
+        push!(get_args_res, tmp_arg)
+        push!(arg_types, :($typeof($tmp_arg)))
+        push!(arg_vals, tmp_arg)
     end
 
-    push!(ins_pos.args, esc(Expr(:call, chain_invoke, invoke_kw...,
+    @gensym kwargs
+    const ekwargs = esc(kwargs)
+
+    push!(ins_pos.args,
+          esc(Expr(:const, Expr(:(=), Expr(:tuple, get_args_res..., kwargs),
+                                Expr(:call, get_args, get_args_args...)))))
+
+    push!(ins_pos.args, esc(Expr(:call, chain_invoke,
+                                 Expr(:parameters, Expr(:(...), kwargs)),
                                  func, Expr(:call, tuple, arg_types...),
                                  arg_vals...)))
 
