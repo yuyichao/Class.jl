@@ -13,6 +13,9 @@
 
 export @chain, @is_toplevel
 
+const ENABLE_KW_HACK = true
+# const ENABLE_KW_HACK = false
+
 # Check if the current scope is the global module scope
 macro is_toplevel()
     @gensym toplevel_test
@@ -82,6 +85,32 @@ end
                         args...; kws...)
 end
 
+if ENABLE_KW_HACK
+    @inline function chain_invoke(f::Function, types::Tuple, args...)
+        return invoke(f, types, args...)
+    end
+
+    @inline function chain_invoke(bm::BoundMethod, types::Tuple, args...)
+        f = bm.func
+        return invoke(f, tuple(typeof(bm.self), types...), bm.self, args...)
+    end
+
+    const chain_invoke_kwsorter = chain_invoke.env.kwsorter
+
+    @inline function chain_invoke.env.kwsorter(kws::Array, f::Function,
+                                               types::Tuple, args...)
+        return invoke(get_kwsorter(f), tuple(Array, types...),
+                      kws, args...)
+    end
+
+    @inline function chain_invoke.env.kwsorter(kws::Array, bm::BoundMethod,
+                                               types::Tuple, args...)
+        f = bm.func
+        return chain_invoke_kwsorter(kws, f, tuple(typeof(bm.self), types...),
+                                     bm.self, args...)
+    end
+end
+
 @inline function chain_invoke_nokw(f::Function, types::Tuple, args...)
     return invoke(f, types, args...)
 end
@@ -93,6 +122,12 @@ end
 
 # Helper to generate arguments list that is evaluated in the correct order
 @inline get_args(args::ANY...; kws...) = tuple(args..., kws)
+
+if ENABLE_KW_HACK
+    @inline get_args(args::ANY...) = args
+    @inline get_args.env.kwsorter(kws::Array, args::ANY...) = tuple(args...,
+                                                                    kws)
+end
 
 ## Generic function and BoundMethod of a generic function is chainable
 @inline function ischainable(v::BoundMethod)
@@ -193,11 +228,19 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
         const ekwargs = esc(kwargs)
 
         push!(ins_pos.args,
-              esc(Expr(:const, Expr(:(=), Expr(:tuple, get_args_res..., kwargs),
-                                    Expr(:call, get_args, get_args_args...)))))
-        push!(ins_pos.args, esc(Expr(:call, chain_invoke,
-                                     Expr(:parameters, Expr(:(...), kwargs)),
-                                     func, types_arg, arg_vals...)))
+              esc(Expr(:const, Expr(:(=), Expr(:tuple, get_args_res...,
+                                               kwargs),
+                                    Expr(:call, get_args,
+                                         get_args_args...)))))
+        if !ENABLE_KW_HACK
+            push!(ins_pos.args, esc(Expr(:call, chain_invoke,
+                                         Expr(:parameters,
+                                              Expr(:(...), kwargs)),
+                                         func, types_arg, arg_vals...)))
+        else
+            push!(ins_pos.args, esc(Expr(:call, chain_invoke_kwsorter, kwargs,
+                                         func, types_arg, arg_vals...)))
+        end
     else
         const pack_tuple = if has_unpack
             Expr(:call, tuple, get_args_args...)

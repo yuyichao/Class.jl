@@ -54,7 +54,7 @@ function invoke_g()
 end
 
 function invoke_g_kw()
-    return invoke(g.env.kwsorter, (Array, Any), [:b, 2], 1)
+    return invoke(g.env.kwsorter, (Array, Any), Any[:b, 2], 1)
 end
 
 function chain_invoke_g()
