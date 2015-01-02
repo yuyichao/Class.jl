@@ -6,7 +6,7 @@ Class.jl is a package that provide certain python-like OO functions.
 
 Class.jl is a free software released under LGPLv3.
 
-### Example
+### Examples
 
 1. Function chaining
 
@@ -25,5 +25,18 @@ Class.jl is a free software released under LGPLv3.
     ```
 
     All types of parameters are supported and the parameters are evaluated
-    in the same way with a normal function call. There shouldn't by any
+    in the same way with a normal function call. There shouldn't be any
     noticeable overhead compare to using `invoke` directly either.
+
+2. Check if the current scope is at module toplevel
+
+    The macro `@is_toplevel` returns `true` if the current scope is at the
+    toplevel of a module.
+
+    ```julia
+    julia> using Class
+    julia> @is_toplevel
+    true
+    julia> (() -> @is_toplevel)()
+    false
+    ```
