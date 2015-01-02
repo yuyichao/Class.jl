@@ -12,7 +12,6 @@
 # License along with this library.
 
 precompile(BoundMethod, ())
-precompile(pack_kwargs, ())
 precompile(get_kwsorter, (Function,))
 precompile(gen_chain_ast, (Expr, Bool))
 precompile(_class_method, (Symbol,))
