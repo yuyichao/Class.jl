@@ -22,8 +22,6 @@ function f(x::FloatingPoint; a=2)
     return (@chain f(x::Any; a=a)) + 2
 end
 
-ex = :(@chain f(a, b..., c=0, d, e..., f::Int; g=0, h...))
-
 @assert f(1) == 3
 @assert f(1.) == 5
 # Non-generic function support
@@ -75,6 +73,7 @@ function time_func(f::Function)
 end
 
 # println(macroexpand(:(@chain g(1::Any))))
+# println(macroexpand(:(@chain g(1::Any, b=2))))
 
 println("No keyword")
 time_func(call_g)

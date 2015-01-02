@@ -49,7 +49,7 @@ end
 # Needed before invoke supports keyword arguments
 
 # Pack keyword arguments, logic copied from jl_g_kwcall
-function pack_kwargs(;kws...)
+function pack_kwargs(kws::Array)
     kwlen = length(kws)
     ary = Array(Any, 2 * kwlen)
 
@@ -69,76 +69,82 @@ end
 
 ## Custom implementation of `invoke`
 # Supports keyword arguments and BoundMethod
-@inline function chain_invoke(f::Function, types::Tuple, args...; kws...)
+
+function chain_invoke_nokw(f::Function, types::Tuple, args...)
+    return invoke(f, types, args...)
+end
+
+function chain_invoke_nokw(bm::BoundMethod, types::Tuple, args...)
+    f = bm.func
+    return invoke(f, tuple(typeof(bm.self), types...), bm.self, args...)
+end
+
+function chain_invoke_kw(kws::Array, f::Function, types::Tuple, args...)
+    return invoke(get_kwsorter(f), tuple(Array, types...), kws, args...)
+end
+
+function chain_invoke_kw(kws::Array, bm::BoundMethod, types::Tuple, args...)
+    f = bm.func
+    return invoke(get_kwsorter(f), tuple(Array, typeof(bm.self), types...),
+                  kws, bm.self, args...)
+end
+
+function chain_invoke(f::Function, types::Tuple, args...; kws...)
     # FIXME, replace with the builtin invoke after it supports keyword arguments
     if isempty(kws)
         return invoke(f, types, args...)
     else
         return invoke(get_kwsorter(f), tuple(Array, types...),
-                      pack_kwargs(;kws...), args...)
+                      pack_kwargs(kws), args...)
     end
 end
 
-@inline function chain_invoke(bm::BoundMethod, types::Tuple, args...; kws...)
+function chain_invoke(bm::BoundMethod, types::Tuple, args...; kws...)
     f = bm.func
     return chain_invoke(f, tuple(typeof(bm.self), types...), bm.self,
                         args...; kws...)
 end
 
 if ENABLE_KW_HACK
-    @inline function chain_invoke(f::Function, types::Tuple, args...)
-        return invoke(f, types, args...)
+    function chain_invoke(f::Function, types::Tuple, args...)
+        return chain_invoke_nokw(f, types, args...)
     end
 
-    @inline function chain_invoke(bm::BoundMethod, types::Tuple, args...)
-        f = bm.func
-        return invoke(f, tuple(typeof(bm.self), types...), bm.self, args...)
+    function chain_invoke(bm::BoundMethod, types::Tuple, args...)
+        return chain_invoke_nokw(f, types, args...)
     end
 
-    const chain_invoke_kwsorter = chain_invoke.env.kwsorter
+    # This is faster than forwarding the call by hand somehow...
+    chain_invoke.env.kwsorter = chain_invoke_kw
 
-    @inline function chain_invoke.env.kwsorter(kws::Array, f::Function,
-                                               types::Tuple, args...)
-        return invoke(get_kwsorter(f), tuple(Array, types...),
-                      kws, args...)
-    end
+    # function chain_invoke.env.kwsorter(kws::Array, f::Function,
+    #                                    types::Tuple, args...)
+    #     return chain_invoke_kw(kws, f, types, args...)
+    # end
 
-    @inline function chain_invoke.env.kwsorter(kws::Array, bm::BoundMethod,
-                                               types::Tuple, args...)
-        f = bm.func
-        return chain_invoke_kwsorter(kws, f, tuple(typeof(bm.self), types...),
-                                     bm.self, args...)
-    end
-end
-
-@inline function chain_invoke_nokw(f::Function, types::Tuple, args...)
-    return invoke(f, types, args...)
-end
-
-@inline function chain_invoke_nokw(bm::BoundMethod, types::Tuple, args...)
-    f = bm.func
-    return invoke(f, tuple(typeof(bm.self), types...), bm.self, args...)
+    # function chain_invoke.env.kwsorter(kws::Array, bm::BoundMethod,
+    #                                    types::Tuple, args...)
+    #     return chain_invoke_kw(kws, bm, types, args...)
+    # end
 end
 
 # Helper to generate arguments list that is evaluated in the correct order
-@inline get_args(args::ANY...; kws...) = tuple(args..., kws)
-
+get_args(args::ANY...; kws...) = tuple(pack_kwargs(kws), args...)
 if ENABLE_KW_HACK
-    @inline get_args(args::ANY...) = args
-    @inline get_args.env.kwsorter(kws::Array, args::ANY...) = tuple(args...,
-                                                                    kws)
+    get_args(args::ANY...) = tuple(Any[], args...)
+    get_args.env.kwsorter(kws::Array, args::ANY...) = tuple(kws, args...)
 end
 
 ## Generic function and BoundMethod of a generic function is chainable
-@inline function ischainable(v::BoundMethod)
+function ischainable(v::BoundMethod)
     return isgeneric(v.func)
 end
 
-@inline function ischainable(v::Function)
+function ischainable(v::Function)
     return isgeneric(v)
 end
 
-@inline function ischainable(::ANY)
+function ischainable(::ANY)
     return false
 end
 
@@ -228,19 +234,11 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
         const ekwargs = esc(kwargs)
 
         push!(ins_pos.args,
-              esc(Expr(:const, Expr(:(=), Expr(:tuple, get_args_res...,
-                                               kwargs),
+              esc(Expr(:const, Expr(:(=), Expr(:tuple, kwargs, get_args_res...),
                                     Expr(:call, get_args,
                                          get_args_args...)))))
-        if !ENABLE_KW_HACK
-            push!(ins_pos.args, esc(Expr(:call, chain_invoke,
-                                         Expr(:parameters,
-                                              Expr(:(...), kwargs)),
-                                         func, types_arg, arg_vals...)))
-        else
-            push!(ins_pos.args, esc(Expr(:call, chain_invoke_kwsorter, kwargs,
-                                         func, types_arg, arg_vals...)))
-        end
+        push!(ins_pos.args, esc(Expr(:call, chain_invoke_kw, kwargs,
+                                     func, types_arg, arg_vals...)))
     else
         const pack_tuple = if has_unpack
             Expr(:call, tuple, get_args_args...)
