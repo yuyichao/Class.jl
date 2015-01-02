@@ -28,7 +28,7 @@ end
 @assert (@chain ((x) -> x + 1)(2::Any)) == 3
 
 function g(x; kw...)
-    return (x, kw)
+    # return (x, kw)
 end
 
 function call_g()
@@ -75,16 +75,31 @@ end
 # println(macroexpand(:(@chain g(1::Any))))
 # println(macroexpand(:(@chain g(1::Any, b=2))))
 
-println("No keyword")
-time_func(call_g)
-time_func(invoke_g)
-time_func(chain_g)
-time_func(chain_invoke_g)
+function test_call_g()
+    println()
+    println("No keyword")
+    time_func(call_g)
+    time_func(invoke_g)
+    time_func(chain_g)
+    time_func(chain_invoke_g)
+
+    println()
+    println("With keyword")
+    time_func(call_g_kw)
+    time_func(invoke_g_kw)
+    time_func(chain_g_kw)
+    time_func(chain_invoke_g_kw)
+end
+
+test_call_g()
 
 println()
+println("With kwsorter hack")
 
-println("With keyword")
-time_func(call_g_kw)
-time_func(invoke_g_kw)
-time_func(chain_g_kw)
-time_func(chain_invoke_g_kw)
+function g(x)
+end
+
+function g.env.kwsorter(kw, x)
+end
+
+test_call_g()
