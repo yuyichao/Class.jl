@@ -130,34 +130,34 @@ function _class(head::Union(Symbol, Expr), body::Expr)
 
         # Class info helpers
 
-        @inline function Class.get_class_type(::Type{$esc_name})
+        @inline function $Class.get_class_type(::Type{$esc_name})
             return $esc_type_name
         end
 
-        @inline function Class.get_class_methods(::Type{$esc_name})
+        @inline function $Class.get_class_methods(::Type{$esc_name})
             return $func_names
         end
 
-        const $tmp_mems = _class_extract_members($esc_name, $func_names,
-                                                 $esc_type_name)
-        @inline function Class.get_class_members(::Type{$esc_name})
+        const $tmp_mems = $_class_extract_members($esc_name, $func_names,
+                                                  $esc_type_name)
+        @inline function $Class.get_class_members(::Type{$esc_name})
             return $tmp_mems
         end
 
         # Proxy certain function calls between the class type and the real type
-        function Base.convert(::Type{$esc_name}, v)
+        function $Base.convert(::Type{$esc_name}, v)
             $(esc(Expr(:meta, :inline)))
-            return convert($esc_type_name, v)
+            return $convert($esc_type_name, v)
         end
 
-        function Base.call(::Type{$esc_name}, args...; kwargs...)
+        function $Base.call(::Type{$esc_name}, args...; kwargs...)
             $(esc(Expr(:meta, :inline)))
-            return call($esc_type_name, args...; kwargs...)
+            return $call($esc_type_name, args...; kwargs...)
         end
 
-        function Base.show(io::Base.IO, ::Type{$esc_type_name})
+        function $Base.show(io::$IO, ::Type{$esc_type_name})
             $(esc(Expr(:meta, :inline)))
-            return show(io, $esc_name)
+            return $show(io, $esc_name)
         end
 
         $esc_name
