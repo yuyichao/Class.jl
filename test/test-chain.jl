@@ -60,7 +60,8 @@ function chain_invoke_g()
 end
 
 function chain_invoke_g_kw()
-    return Class.chain_invoke(g, (Any,), 1, b=2)
+    return Class.chain_invoke.env.kwsorter(Any[:b, 2], g, (Any,), 1)
+    # return Class.chain_invoke(g, (Any,), 1, b=2)
 end
 
 function chain_invoke_g_kw2()
@@ -76,11 +77,11 @@ function chain_g_kw2()
 end
 
 function call_g_kw3()
-    return g(1; ((:e, 2), (:f, 3))...)
+    return g(1; ((:e, 2), :f => 3)...)
 end
 
 function chain_g_kw3()
-    return @chain g(1; ((:e, 2), (:f, 3))...)
+    return @chain g(1; ((:e, 2), :f => 3)...)
 end
 
 function time_func(f::Function)
@@ -96,6 +97,7 @@ end
 # println(macroexpand(:(@chain g(1::Any, b=2))))
 # println(macroexpand(:(@chain g(1::Any, d=2; [(:b, 2), (:c, 3)]...,
 #                                ((:e, 2), (:f, 3))...))))
+println(macroexpand(:(@chain g(1; ((:e, 2), (:f, 3))...))))
 # println(@code_typed chain_invoke_g_kw())
 # println()
 # println(@code_typed chain_invoke_g_kw2())

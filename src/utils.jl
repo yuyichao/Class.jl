@@ -80,14 +80,14 @@ function chain_invoke_kw(kws::Array, bm::BoundMethod, types::Tuple, args...)
 end
 
 # Pack keyword arguments, logic copied from jl_g_kwcall
-function pack_kwargs(kwsArray)
+function pack_kwargs(kws::Array)
     const kwlen = length(kws)
     const ary = Array(Any, 2 * kwlen)
 
     for i in 1:kwlen
-        const kw = kws[i]
-        ary[2 * i - 1] = kw[1]::Symbol
-        ary[2 * i] = kw[2]
+        const key::Symbol, val = kws[i]
+        ary[2 * i - 1] = key
+        ary[2 * i] = val
     end
     return ary
 end
@@ -96,18 +96,19 @@ stagedfunction pack_kwargs{Ts<:Tuple}(kws::Ts)
     const kwlen = length(Ts)
     ex = quote
         const ary = $Array($Any, $(2 * kwlen))
+        key::$Symbol
     end
     for i in 1:kwlen
-        push!(ex.args, :(kw = kws[$i]))
-        push!(ex.args, :(ary[$(2 * i - 1)] = kw[1]::$Symbol))
-        push!(ex.args, :(ary[$(2 * i)] = kw[2]))
+        push!(ex.args, :((key, val) = kws[$i]))
+        push!(ex.args, :(ary[$(2 * i - 1)] = key))
+        push!(ex.args, :(ary[$(2 * i)] = val))
     end
     push!(ex.args, :(return ary))
     return ex
 end
 
 function pack_kwargs(kws)
-    return pack_kwargs(Any[], kws)
+    return pack_kwargs!(Any[], kws)
 end
 
 function pack_kwargs!(ary::Array, kws::Array)
@@ -116,9 +117,9 @@ function pack_kwargs!(ary::Array, kws::Array)
     ccall(:jl_array_grow_end, Void, (Any, UInt), ary, kwlen * 2)
 
     for i in 1:kwlen
-        const kw = kws[i]
-        ary[orig_len + 2 * i - 1] = kw[1]::Symbol
-        ary[orig_len + 2 * i] = kw[2]
+        const key::Symbol, val = kws[i]
+        ary[orig_len + 2 * i - 1] = key
+        ary[orig_len + 2 * i] = val
     end
     return ary
 end
@@ -128,11 +129,12 @@ stagedfunction pack_kwargs!{Ts<:Tuple}(ary::Array, kws::Ts)
     ex = quote
         const orig_len::UInt = length(ary)
         ccall(:jl_array_grow_end, Void, (Any, UInt), ary, $(kwlen * 2))
+        key::$Symbol
     end
     for i in 1:kwlen
-        push!(ex.args, :(kw = kws[$i]))
-        push!(ex.args, :(ary[orig_len + $(2 * i - 1)] = kw[1]::$Symbol))
-        push!(ex.args, :(ary[orig_len + $(2 * i)] = kw[2]))
+        push!(ex.args, :((key, val) = kws[$i]))
+        push!(ex.args, :(ary[orig_len + $(2 * i - 1)] = key))
+        push!(ex.args, :(ary[orig_len + $(2 * i)] = val))
     end
     push!(ex.args, :(return ary))
     return ex
@@ -140,8 +142,9 @@ end
 
 function pack_kwargs!(ary::Array, kws)
     for kw in kws
-        push!(ary, kw[1]::Symbol)
-        push!(ary, kw[2])
+        const key::Symbol, val = kw
+        push!(ary, key)
+        push!(ary, val)
     end
     return ary
 end
@@ -224,7 +227,6 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
                 continue
             elseif arg.head == :(...)
                 @assert length(arg.args) == 1
-                # TODO handle :tuple
                 has_unpack = true
                 # Convert to tuple for typeof() and for iterating only once
                 push!(get_args_args, :($tuple($arg)))
@@ -343,7 +345,10 @@ function sort_kwargs(ins_pos, call_args)
                 push!(paras_kw, tmp_arg)
                 continue
             else
-                error("Invalid keyword argument $sub_arg")
+                # Not sure if this is the most efficient way to do this...
+                push!(paras_ins_pos, :(const $tmp_arg = $(sub_arg)))
+                push!(paras_kw, Expr(:tuple, tmp_arg))
+                continue
             end
         end
     end
