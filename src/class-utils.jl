@@ -30,7 +30,7 @@ using DataStructures
 
 export object
 
-# Base type for all classes
+@doc "Base type for all classes" ->
 abstract object
 
 ## Constructor and destructor

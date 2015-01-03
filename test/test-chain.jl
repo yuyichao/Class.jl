@@ -97,7 +97,8 @@ end
 # println(macroexpand(:(@chain g(1::Any, b=2))))
 # println(macroexpand(:(@chain g(1::Any, d=2; [(:b, 2), (:c, 3)]...,
 #                                ((:e, 2), (:f, 3))...))))
-println(macroexpand(:(@chain g(1; ((:e, 2), (:f, 3))...))))
+# println(macroexpand(:(@chain g(1; ((:e, 2), (:f, 3))...))))
+
 # println(@code_typed chain_invoke_g_kw())
 # println()
 # println(@code_typed chain_invoke_g_kw2())

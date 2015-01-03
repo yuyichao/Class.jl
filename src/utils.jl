@@ -16,7 +16,7 @@ export @chain, @is_toplevel
 const ENABLE_KW_HACK = true
 # const ENABLE_KW_HACK = false
 
-# Check if the current scope is the global module scope
+@doc "Check if the current scope is the global module scope" ->
 macro is_toplevel()
     @gensym toplevel_test
     quote
@@ -32,9 +32,7 @@ end
 # TODO?? check ABI version at runtime
 const class_abi_version = 1
 
-## BoundMethod
-# Object representing a class method bound to an instance
-
+@doc "Object representing a class method bound to an instance" ->
 immutable BoundMethod
     self
     func::Function
@@ -292,10 +290,12 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
     return res
 end
 
+@doc "Chaing function call to a more generic method" ->
 macro chain(args...)
     return gen_chain_ast(args...)
 end
 
+@doc "Chaing class method call to a more generic method" ->
 macro mchain(args...)
     error("@mchain can only be used in a class definition.")
 end

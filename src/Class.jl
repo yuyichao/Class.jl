@@ -257,6 +257,7 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
     return map(esc, [type_def.args, funcs]), func_names
 end
 
+@doc "Defining new class" ->
 macro class(head::Union(Symbol, Expr), body::Expr)
     return _class(head, body)
 end
