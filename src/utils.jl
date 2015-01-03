@@ -83,7 +83,7 @@ function pack_kwargs(kws::Array)
     const ary = Array(Any, 2 * kwlen)
 
     for i in 1:kwlen
-        const key::Symbol, val = kws[i]
+        const (key::Symbol, val) = kws[i]
         ary[2 * i - 1] = key
         ary[2 * i] = val
     end
@@ -115,7 +115,7 @@ function pack_kwargs!(ary::Array, kws::Array)
     ccall(:jl_array_grow_end, Void, (Any, UInt), ary, kwlen * 2)
 
     for i in 1:kwlen
-        const key::Symbol, val = kws[i]
+        const (key::Symbol, val) = kws[i]
         ary[orig_len + 2 * i - 1] = key
         ary[orig_len + 2 * i] = val
     end
@@ -125,7 +125,7 @@ end
 stagedfunction pack_kwargs!{Ts<:Tuple}(ary::Array, kws::Ts)
     const kwlen = length(Ts)
     ex = quote
-        const orig_len::UInt = length(ary)
+        const orig_len = length(ary)
         ccall(:jl_array_grow_end, Void, (Any, UInt), ary, $(kwlen * 2))
         key::$Symbol
     end
@@ -140,7 +140,7 @@ end
 
 function pack_kwargs!(ary::Array, kws)
     for kw in kws
-        const key::Symbol, val = kw
+        const (key::Symbol, val) = kw
         push!(ary, key)
         push!(ary, val)
     end
