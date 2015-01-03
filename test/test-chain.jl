@@ -67,6 +67,22 @@ function chain_invoke_g_kw2()
     return Class.chain_invoke_kw(Any[:b, 2], g, (Any,), 1)
 end
 
+function call_g_kw2()
+    return g(1, d=3; [(:b, 2), (:c, 3)]..., ((:e, 2), (:f, 3))...)
+end
+
+function chain_g_kw2()
+    return @chain g(1, d=3; [(:b, 2), (:c, 3)]..., ((:e, 2), (:f, 3))...)
+end
+
+function call_g_kw3()
+    return g(1; ((:e, 2), (:f, 3))...)
+end
+
+function chain_g_kw3()
+    return @chain g(1; ((:e, 2), (:f, 3))...)
+end
+
 function time_func(f::Function)
     println(f)
     gc()
@@ -78,6 +94,8 @@ end
 
 # println(macroexpand(:(@chain g(1::Any))))
 # println(macroexpand(:(@chain g(1::Any, b=2))))
+# println(macroexpand(:(@chain g(1::Any, d=2; [(:b, 2), (:c, 3)]...,
+#                                ((:e, 2), (:f, 3))...))))
 # println(@code_typed chain_invoke_g_kw())
 # println()
 # println(@code_typed chain_invoke_g_kw2())
@@ -99,17 +117,12 @@ function test_call_g()
     time_func(chain_g_kw)
     time_func(chain_invoke_g_kw)
     time_func(chain_invoke_g_kw2)
-end
 
-test_call_g()
+    time_func(call_g_kw2)
+    time_func(chain_g_kw2)
 
-println()
-println("With kwsorter hack")
-
-function g(x)
-end
-
-function g.env.kwsorter(kw, x)
+    time_func(call_g_kw3)
+    time_func(chain_g_kw3)
 end
 
 test_call_g()

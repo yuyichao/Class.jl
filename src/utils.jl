@@ -79,29 +79,79 @@ function chain_invoke_kw(kws::Array, bm::BoundMethod, types::Tuple, args...)
                   kws, self, args...)
 end
 
+# Pack keyword arguments, logic copied from jl_g_kwcall
+function pack_kwargs(kwsArray)
+    const kwlen = length(kws)
+    const ary = Array(Any, 2 * kwlen)
+
+    for i in 1:kwlen
+        const kw = kws[i]
+        ary[2 * i - 1] = kw[1]::Symbol
+        ary[2 * i] = kw[2]
+    end
+    return ary
+end
+
+stagedfunction pack_kwargs{Ts<:Tuple}(kws::Ts)
+    const kwlen = length(Ts)
+    ex = quote
+        const ary = $Array($Any, $(2 * kwlen))
+    end
+    for i in 1:kwlen
+        push!(ex.args, :(kw = kws[$i]))
+        push!(ex.args, :(ary[$(2 * i - 1)] = kw[1]::$Symbol))
+        push!(ex.args, :(ary[$(2 * i)] = kw[2]))
+    end
+    push!(ex.args, :(return ary))
+    return ex
+end
+
+function pack_kwargs(kws)
+    return pack_kwargs(Any[], kws)
+end
+
+function pack_kwargs!(ary::Array, kws::Array)
+    const orig_len = length(ary)
+    const kwlen = length(kws)
+    ccall(:jl_array_grow_end, Void, (Any, UInt), ary, kwlen * 2)
+
+    for i in 1:kwlen
+        const kw = kws[i]
+        ary[orig_len + 2 * i - 1] = kw[1]::Symbol
+        ary[orig_len + 2 * i] = kw[2]
+    end
+    return ary
+end
+
+stagedfunction pack_kwargs!{Ts<:Tuple}(ary::Array, kws::Ts)
+    const kwlen = length(Ts)
+    ex = quote
+        const orig_len::UInt = length(ary)
+        ccall(:jl_array_grow_end, Void, (Any, UInt), ary, $(kwlen * 2))
+    end
+    for i in 1:kwlen
+        push!(ex.args, :(kw = kws[$i]))
+        push!(ex.args, :(ary[orig_len + $(2 * i - 1)] = kw[1]::$Symbol))
+        push!(ex.args, :(ary[orig_len + $(2 * i)] = kw[2]))
+    end
+    push!(ex.args, :(return ary))
+    return ex
+end
+
+function pack_kwargs!(ary::Array, kws)
+    for kw in kws
+        push!(ary, kw[1]::Symbol)
+        push!(ary, kw[2])
+    end
+    return ary
+end
+
 if ENABLE_KW_HACK
     # Making forwarding of keyword arguments and generating keyword argument
     # pack much faster by directly define the kwsorter
     const chain_invoke = chain_invoke_nokw
     chain_invoke.env.kwsorter = chain_invoke_kw
-
-    # Helper to generate arguments list that is evaluated in the correct order
-    get_args(args::ANY...) = tuple(Any[], args...)
-    get_args_kw(kws::Array, args::ANY...) = tuple(kws, args...)
-    get_args.env.kwsorter = get_args_kw
 else
-    # Pack keyword arguments, logic copied from jl_g_kwcall
-    function pack_kwargs(kws::Array)
-        kwlen = length(kws)
-        ary = Array(Any, 2 * kwlen)
-
-        for i in 1:kwlen
-            ary[2 * i - 1] = kws[i][1]
-            ary[2 * i] = kws[i][2]
-        end
-        return ary
-    end
-
     function chain_invoke(f::Function, types::Tuple, args...; kws...)
         # FIXME, replace with the builtin invoke after it supports keyword
         # arguments
@@ -118,7 +168,6 @@ else
         return chain_invoke(f, tuple(typeof(bm.self), types...), bm.self,
                             args...; kws...)
     end
-    get_args(args::ANY...; kws...) = tuple(pack_kwargs(kws), args...)
 end
 
 ## Generic function and BoundMethod of a generic function is chainable
@@ -143,15 +192,14 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
     const efunc = esc(func)
 
     ins_pos = quote
-        const $efunc = $(esc(ex.args[1]))
+        const $func = $(ex.args[1])
     end
-    const res = Expr(:let, ins_pos)
+    const res = esc(Expr(:let, ins_pos))
     ex.args[1] = func
 
     if maybe_non_gf
         # Handle non-generic function case if necessary
-        const check_gf = Expr(:if, :(!$ischainable($efunc)),
-                              esc(ex), Expr(:block))
+        const check_gf = Expr(:if, :(!$ischainable($func)), ex, Expr(:block))
         push!(ins_pos.args, check_gf)
         ins_pos = check_gf.args[3]
     end
@@ -176,6 +224,7 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
                 continue
             elseif arg.head == :(...)
                 @assert length(arg.args) == 1
+                # TODO handle :tuple
                 has_unpack = true
                 # Convert to tuple for typeof() and for iterating only once
                 push!(get_args_args, :($tuple($arg)))
@@ -218,13 +267,13 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
     if has_kw
         @gensym kwargs
         const ekwargs = esc(kwargs)
-
+        const call_get_args = Expr(:tuple, sort_kwargs(ins_pos.args,
+                                                       get_args_args)...)
         push!(ins_pos.args,
-              esc(Expr(:const, Expr(:(=), Expr(:tuple, kwargs, get_args_res...),
-                                    Expr(:call, get_args,
-                                         get_args_args...)))))
-        push!(ins_pos.args, esc(Expr(:call, chain_invoke_kw, kwargs,
-                                     func, types_arg, arg_vals...)))
+              Expr(:const, Expr(:(=), Expr(:tuple, kwargs, get_args_res...),
+                                call_get_args)))
+        push!(ins_pos.args, Expr(:call, chain_invoke_kw, kwargs,
+                                 func, types_arg, arg_vals...))
     else
         const pack_tuple = if has_unpack
             Expr(:call, tuple, get_args_args...)
@@ -232,10 +281,10 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
             Expr(:tuple, get_args_args...)
         end
         push!(ins_pos.args,
-              esc(Expr(:const, Expr(:(=), Expr(:tuple, get_args_res...),
-                                    pack_tuple))))
-        push!(ins_pos.args, esc(Expr(:call, chain_invoke_nokw, func, types_arg,
-                                     arg_vals...)))
+              Expr(:const, Expr(:(=), Expr(:tuple, get_args_res...),
+                                pack_tuple)))
+        push!(ins_pos.args, Expr(:call, chain_invoke_nokw, func, types_arg,
+                                 arg_vals...))
     end
 
     return res
@@ -247,4 +296,81 @@ end
 
 macro mchain(args...)
     error("@mchain can only be used in a class definition.")
+end
+
+function sort_kwargs(ins_pos, call_args)
+    # This function does not handle unpacking positional argument specially
+    paras_ins_pos = Any[]
+    paras_kws_ins_pos = Any[]
+    kws_ins_pos = Any[]
+
+    kws_kw = Any[]
+    paras_kws_kw = Any[]
+    paras_kw = Any[]
+
+    pos_args = Any[]
+
+    for idx in 1:length(call_args)
+        arg = call_args[idx]
+        if !isa(arg, Expr)
+            push!(pos_args, arg)
+            continue
+        end
+        if arg.head == :kw
+            @assert length(arg.args) == 2
+            @gensym tmp_arg
+            push!(kws_ins_pos, :(const $tmp_arg = $(arg.args[2])))
+            push!(kws_kw, Expr(:quote, arg.args[1]::Symbol))
+            push!(kws_kw, tmp_arg)
+            continue
+        elseif arg.head != :parameters
+            push!(pos_args, arg)
+            continue
+        end
+        for sub_i in 1:length(arg.args)
+            sub_arg::Expr = arg.args[sub_i]
+            @gensym tmp_arg
+            if sub_arg.head == :kw
+                @assert length(sub_arg.args) == 2
+                push!(paras_kws_ins_pos,
+                      :(const $tmp_arg = $(sub_arg.args[2])))
+                push!(paras_kws_kw, Expr(:quote, sub_arg.args[1]::Symbol))
+                push!(paras_kws_kw, tmp_arg)
+                continue
+            elseif sub_arg.head == :(...)
+                @assert length(sub_arg.args) == 1
+                push!(paras_ins_pos, :(const $tmp_arg = $(sub_arg.args[1])))
+                push!(paras_kw, tmp_arg)
+                continue
+            else
+                error("Invalid keyword argument $sub_arg")
+            end
+        end
+    end
+
+    append!(kws_kw, paras_kws_kw)
+    if isempty(paras_kw) && isempty(kws_kw)
+        return Any[Any[], pos_args...]
+    end
+
+    append!(kws_ins_pos, paras_kws_ins_pos)
+    append!(ins_pos, kws_ins_pos)
+    append!(ins_pos, paras_ins_pos)
+
+    @gensym tmp_kws
+
+    if isempty(paras_kw)
+        push!(ins_pos, :(const $tmp_kws = $Any[$(kws_kw...)]))
+    else
+        if isempty(kws_kw) && length(paras_kw) == 1
+            paras_ex = :($pack_kwargs($(paras_kw[1])))
+        else
+            paras_ex = :($Any[$(kws_kw...)])
+            for pack in paras_kw
+                paras_ex = :($pack_kwargs!($paras_ex, $pack))
+            end
+        end
+        push!(ins_pos, :(const $tmp_kws = $paras_ex))
+    end
+    return Any[tmp_kws, pos_args...]
 end

@@ -14,6 +14,9 @@
 precompile(BoundMethod, ())
 precompile(get_kwsorter, (Function,))
 precompile(gen_chain_ast, (Expr, Bool))
+precompile(pack_kwargs, (Array,))
+precompile(pack_kwargs!, (Array{Any, 1}, Array,))
+
 precompile(_class_method, (Symbol,))
 precompile(@class_method(__class_init__), (object,))
 precompile(@class_method(__class_del__), (object,))
