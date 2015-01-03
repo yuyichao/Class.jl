@@ -84,8 +84,8 @@ function pack_kwargs(kws::Array)
 
     for i in 1:kwlen
         const (key::Symbol, val) = kws[i]
-        ary[2 * i - 1] = key
-        ary[2 * i] = val
+        @inbounds ary[2 * i - 1] = key
+        @inbounds ary[2 * i] = val
     end
     return ary
 end
@@ -98,8 +98,8 @@ stagedfunction pack_kwargs{Ts<:Tuple}(kws::Ts)
     end
     for i in 1:kwlen
         push!(ex.args, :((key, val) = kws[$i]))
-        push!(ex.args, :(ary[$(2 * i - 1)] = key))
-        push!(ex.args, :(ary[$(2 * i)] = val))
+        push!(ex.args, :(@inbounds ary[$(2 * i - 1)] = key))
+        push!(ex.args, :(@inbounds ary[$(2 * i)] = val))
     end
     push!(ex.args, :(return ary))
     return ex
@@ -116,8 +116,8 @@ function pack_kwargs!(ary::Array, kws::Array)
 
     for i in 1:kwlen
         const (key::Symbol, val) = kws[i]
-        ary[orig_len + 2 * i - 1] = key
-        ary[orig_len + 2 * i] = val
+        @inbounds ary[orig_len + 2 * i - 1] = key
+        @inbounds ary[orig_len + 2 * i] = val
     end
     return ary
 end
@@ -131,8 +131,8 @@ stagedfunction pack_kwargs!{Ts<:Tuple}(ary::Array, kws::Ts)
     end
     for i in 1:kwlen
         push!(ex.args, :((key, val) = kws[$i]))
-        push!(ex.args, :(ary[orig_len + $(2 * i - 1)] = key))
-        push!(ex.args, :(ary[orig_len + $(2 * i)] = val))
+        push!(ex.args, :(@inbounds ary[orig_len + $(2 * i - 1)] = key))
+        push!(ex.args, :(@inbounds ary[orig_len + $(2 * i)] = val))
     end
     push!(ex.args, :(return ary))
     return ex
