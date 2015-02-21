@@ -52,8 +52,8 @@ end
 let cur_module_name = fullname(current_module())
     global get_class_methods
     local func_names = OrderedDict{Symbol, (Symbol...)}()
-    push!(func_names, :__class_init__, cur_module_name)
-    push!(func_names, :__class_del__, cur_module_name)
+    setindex!(func_names, cur_module_name, :__class_init__)
+    setindex!(func_names, cur_module_name, :__class_del__)
     function get_class_methods(::Type{object})
         return func_names
     end

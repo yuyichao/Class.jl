@@ -86,6 +86,7 @@ end
 
 function time_func(f::Function)
     println(f)
+    f()
     gc()
     @time for i in 1:1000000
         f()
@@ -98,6 +99,12 @@ end
 # println(macroexpand(:(@chain g(1::Any, d=2; [(:b, 2), (:c, 3)]...,
 #                                ((:e, 2), (:f, 3))...))))
 # println(macroexpand(:(@chain g(1; ((:e, 2), (:f, 3))...))))
+
+# println(@code_typed invoke_g())
+# println(@code_typed chain_g())
+
+println(@code_typed invoke_g_kw())
+println(@code_typed invoke_g())
 
 # println(@code_typed chain_invoke_g_kw())
 # println()

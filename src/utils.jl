@@ -172,19 +172,20 @@ else
 end
 
 ## Generic function and BoundMethod of a generic function is chainable
-function ischainable(v::BoundMethod)
+@inline function ischainable(v::BoundMethod)
     return isgeneric(v.func)
 end
 
-function ischainable(v::Function)
+@inline function ischainable(v::Function)
     return isgeneric(v)
 end
 
-function ischainable(::ANY)
+@inline function ischainable(::ANY)
     return false
 end
 
-function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
+function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true,
+                       maybe_non_func::Bool=true)
     if ex.head != :call
         error("Expect function call")
     end
@@ -283,8 +284,15 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true)
         push!(ins_pos.args,
               Expr(:const, Expr(:(=), Expr(:tuple, get_args_res...),
                                 pack_tuple)))
-        push!(ins_pos.args, Expr(:call, chain_invoke_nokw, func, types_arg,
-                                 arg_vals...))
+        call_invoke = Expr(:call, invoke, :($func::$Function),
+                           types_arg, arg_vals...)
+        if maybe_non_func
+            call_invoke = Expr(:if, :($isa($func, $Function)), call_invoke,
+                               Expr(:call, chain_invoke_nokw,
+                                    :($func::$BoundMethod),
+                                    types_arg, arg_vals...))
+        end
+        push!(ins_pos.args, call_invoke)
     end
 
     return res

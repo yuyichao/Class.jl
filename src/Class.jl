@@ -54,6 +54,7 @@ function transform_class_def!(ex::Expr, prefix::String, base_class::Type)
                 error("Expect function call")
             end
             push!(ex.args, false)
+            push!(ex.args, false)
             const meth_name::Symbol = chain_ex.args[1]
             const class_methods = get_class_methods(base_class)
             if haskey(class_methods, meth_name)
@@ -198,7 +199,7 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
         const func_name = expr.args[1].args[1]
         push!(funcs, expr)
         if !haskey(func_names, func_name)
-            push!(func_names, func_name, cur_module_name)
+            setindex!(func_names, cur_module_name, func_name)
         end
     end
     ## Member functions
@@ -254,7 +255,7 @@ function gen_class_ast(cur_module::Module, type_name::Symbol,
         end
     end
 
-    return map(esc, [type_def.args, funcs]), func_names
+    return map(esc, [type_def.args; funcs]), func_names
 end
 
 @doc "Defining new class" ->
