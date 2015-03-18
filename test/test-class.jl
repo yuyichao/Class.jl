@@ -96,9 +96,9 @@ del_counter = 0
 end
 
 @time d1 = DerivedClass()
-@time d2 = DerivedClass(1, float32(2))
+@time d2 = DerivedClass(1, Float32(2))
 @time d3 = DerivedClass(1, 2, 3)
-@time d4 = DerivedClass(1, 2, 3, float32(4))
+@time d4 = DerivedClass(1, 2, 3, Float32(4))
 
 println(d1)
 println(d2)
@@ -117,8 +117,8 @@ gc()
     BaseClass()
 end
 
-b = BaseClass(1, float32(2))
-d = DerivedClass(1, 2, 3, float32(4))
+b = BaseClass(1, Float32(2))
+d = DerivedClass(1, 2, 3, Float32(4))
 
 println(b::object)
 println(d::object)
