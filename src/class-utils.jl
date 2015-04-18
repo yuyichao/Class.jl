@@ -46,12 +46,14 @@ function get_class_type(::Type{object})
 end
 
 function get_class_members(::Type{object})
-    return (Symbol, Type)[]
+    return Tuple{Symbol, Type}[]
 end
+
+const _FuncTableType = OrderedDict{Symbol, Tuple{Vararg{Symbol}}}
 
 let cur_module_name = fullname(current_module())
     global get_class_methods
-    local func_names = OrderedDict{Symbol, (Symbol...)}()
+    local func_names = _FuncTableType()
     setindex!(func_names, cur_module_name, :__class_init__)
     setindex!(func_names, cur_module_name, :__class_del__)
     function get_class_methods(::Type{object})
@@ -59,10 +61,8 @@ let cur_module_name = fullname(current_module())
     end
 end
 
-function _class_extract_members(t::Type,
-                                meths::OrderedDict{Symbol, (Symbol...)},
-                                real_type::Type)
-    const members = (Symbol, Type)[]
+function _class_extract_members(t::Type, meths::_FuncTableType, real_type::Type)
+    const members = Tuple{Symbol, Type}[]
     for (m_name::Symbol, m_type::Type) in zip(real_type.names,
                                               real_type.types)
         if haskey(meths, m_name)
@@ -75,8 +75,8 @@ end
 
 # Class finalizer
 function _class_finalize(self::object)
-    t = (typeof(self),)
-    for del_meth = methods(@class_method(__class_del__), (object,))
+    const t = Tuple{typeof(self)}
+    for del_meth = methods(@class_method(__class_del__), Tuple{object})
         # Call all matches destructors in order
         if t <: del_meth.sig
             del_meth.func(self)

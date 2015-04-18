@@ -165,7 +165,7 @@ function _class(head::Union(Symbol, Expr), body::Expr)
     end
 end
 
-function gen_func_fullname(func_mod::(Symbol...), fname::Symbol)
+function gen_func_fullname(func_mod::Tuple{Vararg{Symbol}}, fname::Symbol)
     meth_name = :Main
     for field in [func_mod..., _class_method(fname)]
         meth_name = :($meth_name.$field)
@@ -173,7 +173,8 @@ function gen_func_fullname(func_mod::(Symbol...), fname::Symbol)
     return meth_name
 end
 
-function gen_mem_func_def(self::Symbol, func_mod::(Symbol...), fname::Symbol)
+function gen_mem_func_def(self::Symbol, func_mod::Tuple{Vararg{Symbol}},
+                          fname::Symbol)
     const meth_name = gen_func_fullname(func_mod, fname)
     return :($self.$fname = $BoundMethod($self, $meth_name))
 end

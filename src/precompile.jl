@@ -23,8 +23,7 @@ precompile(@class_method(__class_del__), (object,))
 precompile(get_class_type, (Type{object},))
 precompile(get_class_members, (Type{object},))
 precompile(get_class_methods, (Type{object},))
-precompile(_class_extract_members,
-           (Type, OrderedDict{Symbol, (Symbol...)}, Type))
+precompile(_class_extract_members, (Type, _FuncTableType, Type))
 
 precompile(transform_class_def!, (Symbol, String, Type))
 precompile(transform_class_def!, (Expr, String, Type))
