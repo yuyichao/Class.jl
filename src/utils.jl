@@ -17,6 +17,14 @@ macro top(sym::Symbol)
     TopNode(sym)
 end
 
+stagedfunction cat_tt{T<:Tuple}(t, ::Type{T})
+    Tuple{t.parameters[1], T.parameters...}
+end
+
+stagedfunction cat_tt{T1<:Tuple, T2<:Tuple}(::Type{T1}, ::Type{T2})
+    Tuple{T1.parameters..., T2.parameters...}
+end
+
 const ENABLE_KW_HACK = true
 # const ENABLE_KW_HACK = false
 
@@ -60,24 +68,26 @@ end
 ## Custom implementation of `invoke`
 # Supports keyword arguments and BoundMethod
 
-function chain_invoke_nokw(f::Function, types::Tuple, args...)
+function chain_invoke_nokw{T<:Tuple}(f::Function, types::Type{T}, args...)
     return invoke(f, types, args...)
 end
 
-function chain_invoke_nokw(bm::BoundMethod, types::Tuple, args...)
+function chain_invoke_nokw{T<:Tuple}(bm::BoundMethod, types::Type{T}, args...)
     const f::Function = bm.func
     const self = bm.self
-    return invoke(f, tuple(typeof(self), types...), self, args...)
+    return invoke(f, cat_tt(typeof(self), types), self, args...)
 end
 
-function chain_invoke_kw(kws::Array, f::Function, types::Tuple, args...)
-    return invoke(get_kwsorter(f), tuple(Array, types...), kws, args...)
+function chain_invoke_kw{T<:Tuple}(kws::Array, f::Function,
+                                   types::Type{T}, args...)
+    return invoke(get_kwsorter(f), cat_tt(Array, types), kws, args...)
 end
 
-function chain_invoke_kw(kws::Array, bm::BoundMethod, types::Tuple, args...)
+function chain_invoke_kw{T<:Tuple}(kws::Array, bm::BoundMethod,
+                                   types::Type{T}, args...)
     const f::Function = bm.func
     const self = bm.self
-    return invoke(get_kwsorter(f), tuple(Array, typeof(self), types...),
+    return invoke(get_kwsorter(f), cat_tt(Tuple{Array, typeof(self)}, types...),
                   kws, self, args...)
 end
 
@@ -95,7 +105,7 @@ function pack_kwargs(kws::Array)
 end
 
 stagedfunction pack_kwargs{Ts<:Tuple}(kws::Ts)
-    const kwlen = length(Ts)
+    const kwlen = length(kws.parameters)
     ex = quote
         const ary = $(@top Array)($(@top Any), $(2 * kwlen))
         key::$(@top Symbol)
@@ -127,7 +137,7 @@ function pack_kwargs!(ary::Array, kws::Array)
 end
 
 stagedfunction pack_kwargs!{Ts<:Tuple}(ary::Array, kws::Ts)
-    const kwlen = length(Ts)
+    const kwlen = length(kws.parameters)
     ex = quote
         const orig_len = length(ary)
         ccall(:jl_array_grow_end, Void, (Any, UInt), ary, $(kwlen * 2))
@@ -157,20 +167,22 @@ if ENABLE_KW_HACK
     const chain_invoke = chain_invoke_nokw
     chain_invoke.env.kwsorter = chain_invoke_kw
 else
-    function chain_invoke(f::Function, types::Tuple, args...; kws...)
+    function chain_invoke{T<:Tuple}(f::Function, types::Type{T},
+                                    args...; kws...)
         # FIXME, replace with the builtin invoke after it supports keyword
         # arguments
         if isempty(kws)
             return invoke(f, types, args...)
         else
-            return invoke(get_kwsorter(f), Tuple{Array, types...},
+            return invoke(get_kwsorter(f), cat_tt(Array, types),
                           pack_kwargs(kws), args...)
         end
     end
 
-    function chain_invoke(bm::BoundMethod, types::Tuple, args...; kws...)
+    function chain_invoke{T<:Tuple}(bm::BoundMethod, types::Type{T},
+                                    args...; kws...)
         f = bm.func
-        return chain_invoke(f, Tuple{typeof(bm.self), types...}, bm.self,
+        return chain_invoke(f, cat_tt(typeof(bm.self), types), bm.self,
                             args...; kws...)
     end
 end
@@ -186,6 +198,14 @@ end
 
 @inline function ischainable(::ANY)
     return false
+end
+
+stagedfunction argtype(t)
+    t
+end
+
+function argtypes(arg)
+    map(argtype, arg)
 end
 
 function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true,
@@ -218,7 +238,6 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true,
     const get_args_res = Any[]
     const get_args_args = Any[]
     has_kw::Bool = false
-    has_unpack::Bool = false
 
     for idx in 2:length(ex.args)
         arg = ex.args[idx]
@@ -231,11 +250,11 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true,
                 continue
             elseif arg.head == :(...)
                 @assert length(arg.args) == 1
-                has_unpack = true
                 # Convert to tuple for typeof() and for iterating only once
-                push!(get_args_args, :($(@top tuple)($arg)))
+                push!(get_args_args, Expr(:tuple, arg))
                 push!(get_args_res, tmp_arg)
-                push!(arg_types, Expr(:(...), :($(@top typeof)($tmp_arg))))
+                # TODO: do not embed function directly
+                push!(arg_types, Expr(:(...), :($argtypes($tmp_arg))))
                 push!(arg_vals, Expr(:(...), tmp_arg))
                 continue
             elseif arg.head == :(::)
@@ -260,15 +279,12 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true,
         # Make sure the value is evaluated only once
         push!(get_args_args, arg)
         push!(get_args_res, tmp_arg)
-        push!(arg_types, :($(@top typeof)($tmp_arg)))
+        # TODO: do not embed function directly
+        push!(arg_types, :($argtype($tmp_arg)))
         push!(arg_vals, tmp_arg)
     end
 
-    const types_arg = if has_unpack
-        Expr(:call, tuple, arg_types...)
-    else
-        Expr(:tuple, arg_types...)
-    end
+    const types_arg = :(Tuple{$(arg_types...)})
 
     if has_kw
         @gensym kwargs
@@ -281,11 +297,7 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true,
         push!(ins_pos.args, Expr(:call, chain_invoke_kw, kwargs,
                                  func, types_arg, arg_vals...))
     else
-        const pack_tuple = if has_unpack
-            Expr(:call, tuple, get_args_args...)
-        else
-            Expr(:tuple, get_args_args...)
-        end
+        const pack_tuple = Expr(:tuple, get_args_args...)
         push!(ins_pos.args,
               Expr(:const, Expr(:(=), Expr(:tuple, get_args_res...),
                                 pack_tuple)))

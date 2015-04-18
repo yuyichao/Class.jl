@@ -48,24 +48,24 @@ function chain_g_kw()
 end
 
 function invoke_g()
-    return invoke(g, (Any,), 1)
+    return invoke(g, Tuple{Any}, 1)
 end
 
 function invoke_g_kw()
-    return invoke(Class.get_kwsorter(g), (Array, Any), Any[:b, 2], 1)
+    return invoke(Class.get_kwsorter(g), Tuple{Array, Any}, Any[:b, 2], 1)
 end
 
 function chain_invoke_g()
-    return Class.chain_invoke_nokw(g, (Any,), 1)
+    return Class.chain_invoke_nokw(g, Tuple{Any}, 1)
 end
 
 function chain_invoke_g_kw()
-    return Class.chain_invoke.env.kwsorter(Any[:b, 2], g, (Any,), 1)
-    # return Class.chain_invoke(g, (Any,), 1, b=2)
+    return Class.chain_invoke.env.kwsorter(Any[:b, 2], g, Tuple{Any}, 1)
+    # return Class.chain_invoke(g, Tuple{Any}, 1, b=2)
 end
 
 function chain_invoke_g_kw2()
-    return Class.chain_invoke_kw(Any[:b, 2], g, (Any,), 1)
+    return Class.chain_invoke_kw(Any[:b, 2], g, Tuple{Any}, 1)
 end
 
 function call_g_kw2()
@@ -84,12 +84,12 @@ function chain_g_kw3()
     return @chain g(1; ((:e, 2), :f => 3)...)
 end
 
-function time_func(f::Function)
+function time_func(f::Function, args...)
     println(f)
-    f()
+    f(args...)
     gc()
     @time for i in 1:1000000
-        f()
+        f(args...)
     end
     gc()
 end
@@ -103,8 +103,11 @@ end
 # println(@code_typed invoke_g())
 # println(@code_typed chain_g())
 
-println(@code_typed invoke_g_kw())
-println(@code_typed invoke_g())
+# println(@code_typed invoke_g_kw())
+# println(@code_typed invoke_g())
+
+println(@code_typed chain_g_kw())
+println(@code_typed chain_g())
 
 # println(@code_typed chain_invoke_g_kw())
 # println()
