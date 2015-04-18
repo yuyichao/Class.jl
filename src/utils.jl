@@ -13,6 +13,10 @@
 
 export @chain, @is_toplevel
 
+macro top(sym::Symbol)
+    TopNode(sym)
+end
+
 const ENABLE_KW_HACK = true
 # const ENABLE_KW_HACK = false
 
@@ -93,8 +97,8 @@ end
 stagedfunction pack_kwargs{Ts<:Tuple}(kws::Ts)
     const kwlen = length(Ts)
     ex = quote
-        const ary = $Array($Any, $(2 * kwlen))
-        key::$Symbol
+        const ary = $(@top Array)($(@top Any), $(2 * kwlen))
+        key::$(@top Symbol)
     end
     for i in 1:kwlen
         push!(ex.args, :((key, val) = kws[$i]))
@@ -127,7 +131,7 @@ stagedfunction pack_kwargs!{Ts<:Tuple}(ary::Array, kws::Ts)
     ex = quote
         const orig_len = length(ary)
         ccall(:jl_array_grow_end, Void, (Any, UInt), ary, $(kwlen * 2))
-        key::$Symbol
+        key::$(@top Symbol)
     end
     for i in 1:kwlen
         push!(ex.args, :((key, val) = kws[$i]))
@@ -159,14 +163,14 @@ else
         if isempty(kws)
             return invoke(f, types, args...)
         else
-            return invoke(get_kwsorter(f), tuple(Array, types...),
+            return invoke(get_kwsorter(f), Tuple{Array, types...},
                           pack_kwargs(kws), args...)
         end
     end
 
     function chain_invoke(bm::BoundMethod, types::Tuple, args...; kws...)
         f = bm.func
-        return chain_invoke(f, tuple(typeof(bm.self), types...), bm.self,
+        return chain_invoke(f, Tuple{typeof(bm.self), types...}, bm.self,
                             args...; kws...)
     end
 end
@@ -201,6 +205,7 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true,
 
     if maybe_non_gf
         # Handle non-generic function case if necessary
+        # TODO: do not embed function directly
         const check_gf = Expr(:if, :(!$ischainable($func)), ex, Expr(:block))
         push!(ins_pos.args, check_gf)
         ins_pos = check_gf.args[3]
@@ -228,9 +233,9 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true,
                 @assert length(arg.args) == 1
                 has_unpack = true
                 # Convert to tuple for typeof() and for iterating only once
-                push!(get_args_args, :($tuple($arg)))
+                push!(get_args_args, :($(@top tuple)($arg)))
                 push!(get_args_res, tmp_arg)
-                push!(arg_types, Expr(:(...), :($typeof($tmp_arg))))
+                push!(arg_types, Expr(:(...), :($(@top typeof)($tmp_arg))))
                 push!(arg_vals, Expr(:(...), tmp_arg))
                 continue
             elseif arg.head == :(::)
@@ -243,7 +248,7 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true,
 
                 @gensym tmp_type
                 const etmp_type = esc(tmp_type)
-                push!(get_args_args, :($(arg.args[2])::$Type))
+                push!(get_args_args, :($(arg.args[2])::$(@top Type)))
                 push!(get_args_res, tmp_type)
 
                 push!(arg_types, tmp_type)
@@ -255,7 +260,7 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true,
         # Make sure the value is evaluated only once
         push!(get_args_args, arg)
         push!(get_args_res, tmp_arg)
-        push!(arg_types, :($typeof($tmp_arg)))
+        push!(arg_types, :($(@top typeof)($tmp_arg)))
         push!(arg_vals, tmp_arg)
     end
 
@@ -284,10 +289,12 @@ function gen_chain_ast(ex::Expr, maybe_non_gf::Bool=true,
         push!(ins_pos.args,
               Expr(:const, Expr(:(=), Expr(:tuple, get_args_res...),
                                 pack_tuple)))
-        call_invoke = Expr(:call, invoke, :($func::$Function),
+        call_invoke = Expr(:call, invoke, :($func::$(@top Function)),
                            types_arg, arg_vals...)
+        # TODO: Do not embed type directly in AST
         if maybe_non_func
-            call_invoke = Expr(:if, :($isa($func, $Function)), call_invoke,
+            call_invoke = Expr(:if, :($(@top isa)($func, $(@top Function))),
+                               call_invoke,
                                Expr(:call, chain_invoke_nokw,
                                     :($func::$BoundMethod),
                                     types_arg, arg_vals...))
@@ -373,8 +380,9 @@ function sort_kwargs(ins_pos, call_args)
     @gensym tmp_kws
 
     if isempty(paras_kw)
-        push!(ins_pos, :(const $tmp_kws = $Any[$(kws_kw...)]))
+        push!(ins_pos, :(const $tmp_kws = $(@top Any)[$(kws_kw...)]))
     else
+        # TODO: do not embed function directly
         if isempty(kws_kw) && length(paras_kw) == 1
             paras_ex = :($pack_kwargs($(paras_kw[1])))
         else
