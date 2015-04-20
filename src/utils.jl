@@ -17,13 +17,11 @@ macro top(sym::Symbol)
     TopNode(sym)
 end
 
-stagedfunction cat_tt{T<:Tuple}(t, ::Type{T})
+@generated cat_tt{T<:Tuple}(t, ::Type{T}) =
     Tuple{t.parameters[1], T.parameters...}
-end
 
-stagedfunction cat_tt{T1<:Tuple, T2<:Tuple}(::Type{T1}, ::Type{T2})
+@generated cat_tt{T1<:Tuple, T2<:Tuple}(::Type{T1}, ::Type{T2}) =
     Tuple{T1.parameters..., T2.parameters...}
-end
 
 const ENABLE_KW_HACK = true
 # const ENABLE_KW_HACK = false
@@ -104,7 +102,7 @@ function pack_kwargs(kws::Array)
     return ary
 end
 
-stagedfunction pack_kwargs{Ts<:Tuple}(kws::Ts)
+@generated function pack_kwargs{Ts<:Tuple}(kws::Ts)
     const kwlen = length(kws.parameters)
     ex = quote
         const ary = $(@top Array)($(@top Any), $(2 * kwlen))
@@ -136,7 +134,7 @@ function pack_kwargs!(ary::Array, kws::Array)
     return ary
 end
 
-stagedfunction pack_kwargs!{Ts<:Tuple}(ary::Array, kws::Ts)
+@generated function pack_kwargs!{Ts<:Tuple}(ary::Array, kws::Ts)
     const kwlen = length(kws.parameters)
     ex = quote
         const orig_len = length(ary)
@@ -200,9 +198,7 @@ end
     return false
 end
 
-stagedfunction argtype(t)
-    t
-end
+@generated argtype(t) = t
 
 function argtypes(arg)
     map(argtype, arg)
